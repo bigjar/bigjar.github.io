@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  
+
+  
+  <title>Kafka之Producer源码 | MrHup.code</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="description" content="简介Kafka是一个分布式的流处理平台：  发布和订阅数据流，类似于消息队列或者企业消息系统 容错方式存储数据流 数据流到即处理  Kafka主要用于以下两种类型的应用：  建立从系统或者应用中获取可靠实时的数据流管道 建立转换数据流的实时流应用  Kafka有以下4个核心API：  Producer API发布一个数据流到一个或多个Kafka topic。 Consumer API订阅一个或多个">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Kafka之Producer源码">
+<meta property="og:url" content="http://yoursite.com/2018/08/12/Kafka%E4%B9%8BProducer%E6%BA%90%E7%A0%81/index.html">
+<meta property="og:site_name" content="MrHup.code">
+<meta property="og:description" content="简介Kafka是一个分布式的流处理平台：  发布和订阅数据流，类似于消息队列或者企业消息系统 容错方式存储数据流 数据流到即处理  Kafka主要用于以下两种类型的应用：  建立从系统或者应用中获取可靠实时的数据流管道 建立转换数据流的实时流应用  Kafka有以下4个核心API：  Producer API发布一个数据流到一个或多个Kafka topic。 Consumer API订阅一个或多个">
+<meta property="og:locale" content="cn">
+<meta property="og:image" content="http://yoursite.com/2018/08/12/Kafka%E4%B9%8BProducer%E6%BA%90%E7%A0%81/kafka_Intro.png">
+<meta property="article:published_time" content="2018-08-12T11:40:50.000Z">
+<meta property="article:modified_time" content="2020-02-26T10:14:59.945Z">
+<meta property="article:author" content="MrHup">
+<meta property="article:tag" content="kafka">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://yoursite.com/2018/08/12/Kafka%E4%B9%8BProducer%E6%BA%90%E7%A0%81/kafka_Intro.png">
+  
+    <link rel="alternate" href="/atom.xml" title="MrHup.code" type="application/atom+xml">
+  
+  
+    <link rel="icon" href="/favicon.png">
+  
+  
+    <link href="//fonts.googleapis.com/css?family=Source+Code+Pro" rel="stylesheet" type="text/css">
+  
+  
+<link rel="stylesheet" href="/css/style.css">
+
+<meta name="generator" content="Hexo 4.2.0"></head>
+
+<body>
+  <div id="container">
+    <div id="wrap">
+      <header id="header">
+  <div id="banner"></div>
+  <div id="header-outer" class="outer">
+    <div id="header-title" class="inner">
+      <h1 id="logo-wrap">
+        <a href="/" id="logo">MrHup.code</a>
+      </h1>
+      
+        <h2 id="subtitle-wrap">
+          <a href="/" id="subtitle">HeapAndStack</a>
+        </h2>
+      
+    </div>
+    <div id="header-inner" class="inner">
+      <nav id="main-nav">
+        <a id="main-nav-toggle" class="nav-icon"></a>
+        
+          <a class="main-nav-link" href="/">Home</a>
+        
+          <a class="main-nav-link" href="/archives">Archives</a>
+        
+      </nav>
+      <nav id="sub-nav">
+        
+          <a id="nav-rss-link" class="nav-icon" href="/atom.xml" title="RSS Feed"></a>
+        
+        <a id="nav-search-btn" class="nav-icon" title="Search"></a>
+      </nav>
+      <div id="search-form-wrap">
+        <form action="//google.com/search" method="get" accept-charset="UTF-8" class="search-form"><input type="search" name="q" class="search-form-input" placeholder="Search"><button type="submit" class="search-form-submit">&#xF002;</button><input type="hidden" name="sitesearch" value="http://yoursite.com"></form>
+      </div>
+    </div>
+  </div>
+</header>
+      <div class="outer">
+        <section id="main"><article id="post-Kafka之Producer源码" class="article article-type-post" itemscope itemprop="blogPost">
+  <div class="article-meta">
+    <a href="/2018/08/12/Kafka%E4%B9%8BProducer%E6%BA%90%E7%A0%81/" class="article-date">
+  <time datetime="2018-08-12T11:40:50.000Z" itemprop="datePublished">2018-08-12</time>
+</a>
+    
+  <div class="article-category">
+    <a class="article-category-link" href="/categories/%E5%A4%A7%E6%95%B0%E6%8D%AE/">大数据</a>
+  </div>
+
+  </div>
+  <div class="article-inner">
+    
+    
+      <header class="article-header">
+        
+  
+    <h1 class="article-title" itemprop="name">
+      Kafka之Producer源码
+    </h1>
+  
+
+      </header>
+    
+    <div class="article-entry" itemprop="articleBody">
+      
+        <h2 id="简介"><a href="#简介" class="headerlink" title="简介"></a>简介</h2><p>Kafka是一个分布式的流处理平台：</p>
+<ul>
+<li>发布和订阅数据流，类似于消息队列或者企业消息系统</li>
+<li>容错方式存储数据流</li>
+<li>数据流到即处理</li>
+</ul>
+<p>Kafka主要用于以下两种类型的应用：</p>
+<ul>
+<li>建立从系统或者应用中获取可靠实时的数据流管道</li>
+<li>建立转换数据流的实时流应用</li>
+</ul>
+<p>Kafka有以下4个核心API：</p>
+<ul>
+<li>Producer API发布一个数据流到一个或多个Kafka topic。</li>
+<li>Consumer API订阅一个或多个topic，并且处理topic中的数据。</li>
+<li>Streams API作为一个流处理器，消费来自一个或多个topic的输入流，同时产生输出流到一个或多个topic。</li>
+<li>Connector API建立运行一个可复用的生产者或者消费者用来连接存在于应用或者数据系统中的topics。</li>
+</ul>
+<p><img src="kafka_Intro.png" alt="kafka introduce"></p>
+<p>本文主要从源码的角度解析一下Producer。</p>
+<h2 id="Producer"><a href="#Producer" class="headerlink" title="Producer"></a>Producer</h2><p>Producer发布数据到指定的topics。Producer主要负责数据被分发到对应topic的哪个分区。最简单的负载均衡是通过轮询来进行分区，也可以通过其他的分区函数(根据数据中的key等)。</p>
+<p>下面的代码是通过KafkaTemplate模版建立的一个kafka实例，然后调用了send方法把消息发送到”abc123”这个topic上去。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">@Autowired</span></span><br><span class="line"><span class="keyword">private</span> KafkaTemplate&lt;String, String&gt; kafkaTemplate;</span><br><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">send</span><span class="params">()</span> </span>&#123;</span><br><span class="line">    String message = <span class="string">"2018-08-07 08:21:47578|1|18701046390|001003|0|2|NULL|2018-08-07 08:21:47:544|2018-08-07 08:21:47:578|0|10.200.1.85|10.200.1.147:7022|"</span>;</span><br><span class="line">    kafkaTemplate.send(<span class="string">"abc123"</span>, message);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>其内部实现主要是依靠doSend方法。首先进来判断是否设置了支持事务，接着获取了一个producer实例，然后调用其send方法。在send的回调结束后调用了closeProducer方法来关闭producer。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br></pre></td><td class="code"><pre><span class="line"> 	<span class="keyword">protected</span> ListenableFuture&lt;SendResult&lt;K, V&gt;&gt; doSend(<span class="keyword">final</span> ProducerRecord&lt;K, V&gt; producerRecord) &#123;</span><br><span class="line">		<span class="keyword">if</span> (<span class="keyword">this</span>.transactional) &#123;</span><br><span class="line">			Assert.state(inTransaction(),</span><br><span class="line">					<span class="string">"No transaction is in process; "</span></span><br><span class="line">						+ <span class="string">"possible solutions: run the template operation within the scope of a "</span></span><br><span class="line">						+ <span class="string">"template.executeInTransaction() operation, start a transaction with @Transactional "</span></span><br><span class="line">						+ <span class="string">"before invoking the template method, "</span></span><br><span class="line">						+ <span class="string">"run in a transaction started by a listener container when consuming a record"</span>);</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">final</span> Producer&lt;K, V&gt; producer = getTheProducer();</span><br><span class="line">		<span class="keyword">if</span> (<span class="keyword">this</span>.logger.isTraceEnabled()) &#123;</span><br><span class="line">			<span class="keyword">this</span>.logger.trace(<span class="string">"Sending: "</span> + producerRecord);</span><br><span class="line">		&#125;</span><br><span class="line">		<span class="keyword">final</span> SettableListenableFuture&lt;SendResult&lt;K, V&gt;&gt; future = <span class="keyword">new</span> SettableListenableFuture&lt;&gt;();</span><br><span class="line">		producer.send(producerRecord, <span class="keyword">new</span> Callback() &#123;</span><br><span class="line"></span><br><span class="line">		<span class="meta">@Override</span></span><br><span class="line">		<span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">onCompletion</span><span class="params">(RecordMetadata metadata, Exception exception)</span> </span>&#123;</span><br><span class="line">			<span class="keyword">try</span> &#123;</span><br><span class="line">				<span class="keyword">if</span> (exception == <span class="keyword">null</span>) &#123;</span><br><span class="line">					future.set(<span class="keyword">new</span> SendResult&lt;&gt;(producerRecord, metadata));</span><br><span class="line">					<span class="keyword">if</span> (KafkaTemplate.<span class="keyword">this</span>.producerListener != <span class="keyword">null</span>) &#123;</span><br><span class="line">						KafkaTemplate.<span class="keyword">this</span>.producerListener.onSuccess(producerRecord, metadata);</span><br><span class="line">					&#125;</span><br><span class="line">					<span class="keyword">if</span> (KafkaTemplate.<span class="keyword">this</span>.logger.isTraceEnabled()) &#123;</span><br><span class="line">						KafkaTemplate.<span class="keyword">this</span>.logger.trace(<span class="string">"Sent ok: "</span> + producerRecord + <span class="string">", metadata: "</span> + metadata);</span><br><span class="line">					&#125;</span><br><span class="line">				&#125;</span><br><span class="line">				<span class="keyword">else</span> &#123;</span><br><span class="line">					future.setException(<span class="keyword">new</span> KafkaProducerException(producerRecord, <span class="string">"Failed to send"</span>, exception));</span><br><span class="line">					<span class="keyword">if</span> (KafkaTemplate.<span class="keyword">this</span>.producerListener != <span class="keyword">null</span>) &#123;</span><br><span class="line">						KafkaTemplate.<span class="keyword">this</span>.producerListener.onError(producerRecord, exception);</span><br><span class="line">					&#125;</span><br><span class="line">					<span class="keyword">if</span> (KafkaTemplate.<span class="keyword">this</span>.logger.isDebugEnabled()) &#123;</span><br><span class="line">						KafkaTemplate.<span class="keyword">this</span>.logger.debug(<span class="string">"Failed to send: "</span> + producerRecord, exception);</span><br><span class="line">					&#125;</span><br><span class="line">				&#125;</span><br><span class="line">			&#125;</span><br><span class="line">			<span class="keyword">finally</span> &#123;</span><br><span class="line">				<span class="keyword">if</span> (!KafkaTemplate.<span class="keyword">this</span>.transactional) &#123;</span><br><span class="line">					closeProducer(producer, <span class="keyword">false</span>);</span><br><span class="line">				&#125;</span><br><span class="line">			&#125;</span><br><span class="line">		&#125;</span><br><span class="line"></span><br><span class="line">	&#125;);</span><br><span class="line">	<span class="keyword">if</span> (<span class="keyword">this</span>.autoFlush) &#123;</span><br><span class="line">		flush();</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">if</span> (<span class="keyword">this</span>.logger.isTraceEnabled()) &#123;</span><br><span class="line">		<span class="keyword">this</span>.logger.trace(<span class="string">"Sent: "</span> + producerRecord);</span><br><span class="line">	&#125;</span><br><span class="line">	<span class="keyword">return</span> future;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>producer中的doSend方法实现异步发送数据到topic。</p>
+<ol>
+<li>确认topic的元数据是可用的，并设置等待超时时间。</li>
+<li>序列化record的key，topic和header。</li>
+<li>序列化record的value，topic，header。</li>
+<li>设置record的分区。这边如果在最开始传入时设置了分区，就用设置的分区，如果没有，就用轮询的方式计算。</li>
+<li>检查序列化后要传输的record是否超过限制；</li>
+<li>把前面设置好的分区、序列化的key，value、超时时间、header等参数放入到累加器中。</li>
+<li>如果返回的结果显示批队列已经满了或者新建立了一个批队列，那么就唤醒这个sender发送数据。</li>
+<li>返回result的future给上层。</li>
+</ol>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">private</span> Future&lt;RecordMetadata&gt; <span class="title">doSend</span><span class="params">(ProducerRecord&lt;K, V&gt; record, Callback callback)</span> </span>&#123;</span><br><span class="line">    TopicPartition tp = <span class="keyword">null</span>;</span><br><span class="line">    <span class="keyword">try</span> &#123;</span><br><span class="line">        <span class="comment">// first make sure the metadata for the topic is available</span></span><br><span class="line">        ClusterAndWaitTime clusterAndWaitTime = waitOnMetadata(record.topic(), record.partition(), maxBlockTimeMs);</span><br><span class="line">        <span class="keyword">long</span> remainingWaitMs = Math.max(<span class="number">0</span>, maxBlockTimeMs - clusterAndWaitTime.waitedOnMetadataMs);</span><br><span class="line">        Cluster cluster = clusterAndWaitTime.cluster;</span><br><span class="line">        <span class="keyword">byte</span>[] serializedKey;</span><br><span class="line">        <span class="keyword">try</span> &#123;</span><br><span class="line">            serializedKey = keySerializer.serialize(record.topic(), record.headers(), record.key());</span><br><span class="line">        &#125; <span class="keyword">catch</span> (ClassCastException cce) &#123;</span><br><span class="line">            <span class="keyword">throw</span> <span class="keyword">new</span> SerializationException(<span class="string">"Can't convert key of class "</span> + record.key().getClass().getName() +</span><br><span class="line">                    <span class="string">" to class "</span> + producerConfig.getClass(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG).getName() +</span><br><span class="line">                    <span class="string">" specified in key.serializer"</span>, cce);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">byte</span>[] serializedValue;</span><br><span class="line">        <span class="keyword">try</span> &#123;</span><br><span class="line">            serializedValue = valueSerializer.serialize(record.topic(), record.headers(), record.value());</span><br><span class="line">        &#125; <span class="keyword">catch</span> (ClassCastException cce) &#123;</span><br><span class="line">            <span class="keyword">throw</span> <span class="keyword">new</span> SerializationException(<span class="string">"Can't convert value of class "</span> + record.value().getClass().getName() +</span><br><span class="line">                    <span class="string">" to class "</span> + producerConfig.getClass(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG).getName() +</span><br><span class="line">                    <span class="string">" specified in value.serializer"</span>, cce);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">int</span> partition = partition(record, serializedKey, serializedValue, cluster);</span><br><span class="line">        tp = <span class="keyword">new</span> TopicPartition(record.topic(), partition);</span><br><span class="line"></span><br><span class="line">        setReadOnly(record.headers());</span><br><span class="line">        Header[] headers = record.headers().toArray();</span><br><span class="line"></span><br><span class="line">        <span class="keyword">int</span> serializedSize = AbstractRecords.estimateSizeInBytesUpperBound(apiVersions.maxUsableProduceMagic(),</span><br><span class="line">                compressionType, serializedKey, serializedValue, headers);</span><br><span class="line">        ensureValidRecordSize(serializedSize);</span><br><span class="line">        <span class="keyword">long</span> timestamp = record.timestamp() == <span class="keyword">null</span> ? time.milliseconds() : record.timestamp();</span><br><span class="line">        log.trace(<span class="string">"Sending record &#123;&#125; with callback &#123;&#125; to topic &#123;&#125; partition &#123;&#125;"</span>, record, callback, record.topic(), partition);</span><br><span class="line">        <span class="comment">// producer callback will make sure to call both 'callback' and interceptor callback</span></span><br><span class="line">        Callback interceptCallback = <span class="keyword">this</span>.interceptors == <span class="keyword">null</span> ? callback : <span class="keyword">new</span> InterceptorCallback&lt;&gt;(callback, <span class="keyword">this</span>.interceptors, tp);</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> (transactionManager != <span class="keyword">null</span> &amp;&amp; transactionManager.isTransactional())</span><br><span class="line">            transactionManager.maybeAddPartitionToTransaction(tp);</span><br><span class="line"></span><br><span class="line">        RecordAccumulator.RecordAppendResult result = accumulator.append(tp, timestamp, serializedKey,</span><br><span class="line">                serializedValue, headers, interceptCallback, remainingWaitMs);</span><br><span class="line">        <span class="keyword">if</span> (result.batchIsFull || result.newBatchCreated) &#123;</span><br><span class="line">            log.trace(<span class="string">"Waking up the sender since topic &#123;&#125; partition &#123;&#125; is either full or getting a new batch"</span>, record.topic(), partition);</span><br><span class="line">            <span class="keyword">this</span>.sender.wakeup();</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> result.future;</span><br><span class="line">        <span class="comment">// handling exceptions and record the errors;</span></span><br><span class="line">        <span class="comment">// for API exceptions return them in the future,</span></span><br><span class="line">        <span class="comment">// for other exceptions throw directly</span></span><br><span class="line">    &#125; <span class="keyword">catch</span> (ApiException e) &#123;</span><br><span class="line">        log.debug(<span class="string">"Exception occurred during message send:"</span>, e);</span><br><span class="line">        <span class="keyword">if</span> (callback != <span class="keyword">null</span>)</span><br><span class="line">            callback.onCompletion(<span class="keyword">null</span>, e);</span><br><span class="line">        <span class="keyword">this</span>.errors.record();</span><br><span class="line">        <span class="keyword">if</span> (<span class="keyword">this</span>.interceptors != <span class="keyword">null</span>)</span><br><span class="line">            <span class="keyword">this</span>.interceptors.onSendError(record, tp, e);</span><br><span class="line">        <span class="keyword">return</span> <span class="keyword">new</span> FutureFailure(e);</span><br><span class="line">    &#125; <span class="keyword">catch</span> (InterruptedException e) &#123;</span><br><span class="line">        <span class="keyword">this</span>.errors.record();</span><br><span class="line">        <span class="keyword">if</span> (<span class="keyword">this</span>.interceptors != <span class="keyword">null</span>)</span><br><span class="line">            <span class="keyword">this</span>.interceptors.onSendError(record, tp, e);</span><br><span class="line">        <span class="keyword">throw</span> <span class="keyword">new</span> InterruptException(e);</span><br><span class="line">    &#125; <span class="keyword">catch</span> (BufferExhaustedException e) &#123;</span><br><span class="line">        <span class="keyword">this</span>.errors.record();</span><br><span class="line">        <span class="keyword">this</span>.metrics.sensor(<span class="string">"buffer-exhausted-records"</span>).record();</span><br><span class="line">        <span class="keyword">if</span> (<span class="keyword">this</span>.interceptors != <span class="keyword">null</span>)</span><br><span class="line">            <span class="keyword">this</span>.interceptors.onSendError(record, tp, e);</span><br><span class="line">        <span class="keyword">throw</span> e;</span><br><span class="line">    &#125; <span class="keyword">catch</span> (KafkaException e) &#123;</span><br><span class="line">        <span class="keyword">this</span>.errors.record();</span><br><span class="line">        <span class="keyword">if</span> (<span class="keyword">this</span>.interceptors != <span class="keyword">null</span>)</span><br><span class="line">            <span class="keyword">this</span>.interceptors.onSendError(record, tp, e);</span><br><span class="line">        <span class="keyword">throw</span> e;</span><br><span class="line">    &#125; <span class="keyword">catch</span> (Exception e) &#123;</span><br><span class="line">        <span class="comment">// we notify interceptor about all exceptions, since onSend is called before anything else in this method</span></span><br><span class="line">        <span class="keyword">if</span> (<span class="keyword">this</span>.interceptors != <span class="keyword">null</span>)</span><br><span class="line">            <span class="keyword">this</span>.interceptors.onSendError(record, tp, e);</span><br><span class="line">        <span class="keyword">throw</span> e;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+
+<p>RecordAccumulator中的append方法用于把record添加到累加器中，并返回累加的结果。</p>
+<p>首先它检查是否有一个在处理的batch。如果有，直接尝试增加序列化后的record到累加器中。如果没有，则创建一个带有缓冲区的新的batch，然后尝试增加序列化后的record到batch中的缓冲区内，接着增加batch到队列中。最终返回累加的结果。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> RecordAppendResult <span class="title">append</span><span class="params">(TopicPartition tp,</span></span></span><br><span class="line"><span class="function"><span class="params">                                 <span class="keyword">long</span> timestamp,</span></span></span><br><span class="line"><span class="function"><span class="params">                                 <span class="keyword">byte</span>[] key,</span></span></span><br><span class="line"><span class="function"><span class="params">                                 <span class="keyword">byte</span>[] value,</span></span></span><br><span class="line"><span class="function"><span class="params">                                 Header[] headers,</span></span></span><br><span class="line"><span class="function"><span class="params">                                 Callback callback,</span></span></span><br><span class="line"><span class="function"><span class="params">                                 <span class="keyword">long</span> maxTimeToBlock)</span> <span class="keyword">throws</span> InterruptedException </span>&#123;</span><br><span class="line">    <span class="comment">// We keep track of the number of appending thread to make sure we do not miss batches in</span></span><br><span class="line">    <span class="comment">// abortIncompleteBatches().</span></span><br><span class="line">    appendsInProgress.incrementAndGet();</span><br><span class="line">    ByteBuffer buffer = <span class="keyword">null</span>;</span><br><span class="line">    <span class="keyword">if</span> (headers == <span class="keyword">null</span>) headers = Record.EMPTY_HEADERS;</span><br><span class="line">    <span class="keyword">try</span> &#123;</span><br><span class="line">        <span class="comment">// check if we have an in-progress batch</span></span><br><span class="line">        Deque&lt;ProducerBatch&gt; dq = getOrCreateDeque(tp);</span><br><span class="line">        <span class="keyword">synchronized</span> (dq) &#123;</span><br><span class="line">            <span class="keyword">if</span> (closed)</span><br><span class="line">                <span class="keyword">throw</span> <span class="keyword">new</span> IllegalStateException(<span class="string">"Cannot send after the producer is closed."</span>);</span><br><span class="line">            RecordAppendResult appendResult = tryAppend(timestamp, key, value, headers, callback, dq);</span><br><span class="line">            <span class="keyword">if</span> (appendResult != <span class="keyword">null</span>)</span><br><span class="line">                <span class="keyword">return</span> appendResult;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment">// we don't have an in-progress record batch try to allocate a new batch</span></span><br><span class="line">        <span class="keyword">byte</span> maxUsableMagic = apiVersions.maxUsableProduceMagic();</span><br><span class="line">        <span class="keyword">int</span> size = Math.max(<span class="keyword">this</span>.batchSize, AbstractRecords.estimateSizeInBytesUpperBound(maxUsableMagic, compression, key, value, headers));</span><br><span class="line">        log.trace(<span class="string">"Allocating a new &#123;&#125; byte message buffer for topic &#123;&#125; partition &#123;&#125;"</span>, size, tp.topic(), tp.partition());</span><br><span class="line">        buffer = free.allocate(size, maxTimeToBlock);</span><br><span class="line">        <span class="keyword">synchronized</span> (dq) &#123;</span><br><span class="line">            <span class="comment">// Need to check if producer is closed again after grabbing the dequeue lock.</span></span><br><span class="line">            <span class="keyword">if</span> (closed)</span><br><span class="line">                <span class="keyword">throw</span> <span class="keyword">new</span> IllegalStateException(<span class="string">"Cannot send after the producer is closed."</span>);</span><br><span class="line"></span><br><span class="line">            RecordAppendResult appendResult = tryAppend(timestamp, key, value, headers, callback, dq);</span><br><span class="line">            <span class="keyword">if</span> (appendResult != <span class="keyword">null</span>) &#123;</span><br><span class="line">                <span class="comment">// Somebody else found us a batch, return the one we waited for! Hopefully this doesn't happen often...</span></span><br><span class="line">                <span class="keyword">return</span> appendResult;</span><br><span class="line">            &#125;</span><br><span class="line"></span><br><span class="line">            MemoryRecordsBuilder recordsBuilder = recordsBuilder(buffer, maxUsableMagic);</span><br><span class="line">            ProducerBatch batch = <span class="keyword">new</span> ProducerBatch(tp, recordsBuilder, time.milliseconds());</span><br><span class="line">            FutureRecordMetadata future = Utils.notNull(batch.tryAppend(timestamp, key, value, headers, callback, time.milliseconds()));</span><br><span class="line"></span><br><span class="line">            dq.addLast(batch);</span><br><span class="line">            incomplete.add(batch);</span><br><span class="line"></span><br><span class="line">            <span class="comment">// Don't deallocate this buffer in the finally block as it's being used in the record batch</span></span><br><span class="line">            buffer = <span class="keyword">null</span>;</span><br><span class="line"></span><br><span class="line">            <span class="keyword">return</span> <span class="keyword">new</span> RecordAppendResult(future, dq.size() &gt; <span class="number">1</span> || batch.isFull(), <span class="keyword">true</span>);</span><br><span class="line">        &#125;</span><br><span class="line">    &#125; <span class="keyword">finally</span> &#123;</span><br><span class="line">        <span class="keyword">if</span> (buffer != <span class="keyword">null</span>)</span><br><span class="line">            free.deallocate(buffer);</span><br><span class="line">        appendsInProgress.decrementAndGet();</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+
+<p>真正发送record到集群的的类是Sender类，它是一个bachground thread。它在run方法中调用sendProducerData方法。</p>
+<p>而sendProducerData方法做了以下事情：</p>
+<ol>
+<li>从累加器中获取可以准备发送的record</li>
+<li>如果有任何分区的leader还不知道，强制元数据更新</li>
+<li>移除还没有准备好发送的节点</li>
+<li>创建一个request请求用于发送batch</li>
+<li>对于过期的batch进行reset producer id</li>
+<li>发送batch request</li>
+</ol>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">private</span> <span class="keyword">long</span> <span class="title">sendProducerData</span><span class="params">(<span class="keyword">long</span> now)</span> </span>&#123;</span><br><span class="line">    Cluster cluster = metadata.fetch();</span><br><span class="line"></span><br><span class="line">    <span class="comment">// get the list of partitions with data ready to send</span></span><br><span class="line">    RecordAccumulator.ReadyCheckResult result = <span class="keyword">this</span>.accumulator.ready(cluster, now);</span><br><span class="line"></span><br><span class="line">    <span class="comment">// if there are any partitions whose leaders are not known yet, force metadata update</span></span><br><span class="line">    <span class="keyword">if</span> (!result.unknownLeaderTopics.isEmpty()) &#123;</span><br><span class="line">        <span class="comment">// The set of topics with unknown leader contains topics with leader election pending as well as</span></span><br><span class="line">        <span class="comment">// topics which may have expired. Add the topic again to metadata to ensure it is included</span></span><br><span class="line">        <span class="comment">// and request metadata update, since there are messages to send to the topic.</span></span><br><span class="line">        <span class="keyword">for</span> (String topic : result.unknownLeaderTopics)</span><br><span class="line">            <span class="keyword">this</span>.metadata.add(topic);</span><br><span class="line">        <span class="keyword">this</span>.metadata.requestUpdate();</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// remove any nodes we aren't ready to send to</span></span><br><span class="line">    Iterator&lt;Node&gt; iter = result.readyNodes.iterator();</span><br><span class="line">    <span class="keyword">long</span> notReadyTimeout = Long.MAX_VALUE;</span><br><span class="line">    <span class="keyword">while</span> (iter.hasNext()) &#123;</span><br><span class="line">        Node node = iter.next();</span><br><span class="line">        <span class="keyword">if</span> (!<span class="keyword">this</span>.client.ready(node, now)) &#123;</span><br><span class="line">            iter.remove();</span><br><span class="line">            notReadyTimeout = Math.min(notReadyTimeout, <span class="keyword">this</span>.client.connectionDelay(node, now));</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// create produce requests</span></span><br><span class="line">    Map&lt;Integer, List&lt;ProducerBatch&gt;&gt; batches = <span class="keyword">this</span>.accumulator.drain(cluster, result.readyNodes,</span><br><span class="line">            <span class="keyword">this</span>.maxRequestSize, now);</span><br><span class="line">    <span class="keyword">if</span> (guaranteeMessageOrder) &#123;</span><br><span class="line">        <span class="comment">// Mute all the partitions drained</span></span><br><span class="line">        <span class="keyword">for</span> (List&lt;ProducerBatch&gt; batchList : batches.values()) &#123;</span><br><span class="line">            <span class="keyword">for</span> (ProducerBatch batch : batchList)</span><br><span class="line">                <span class="keyword">this</span>.accumulator.mutePartition(batch.topicPartition);</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    List&lt;ProducerBatch&gt; expiredBatches = <span class="keyword">this</span>.accumulator.expiredBatches(<span class="keyword">this</span>.requestTimeout, now);</span><br><span class="line">    <span class="comment">// Reset the producer id if an expired batch has previously been sent to the broker. Also update the metrics</span></span><br><span class="line">    <span class="comment">// for expired batches. see the documentation of @TransactionState.resetProducerId to understand why</span></span><br><span class="line">    <span class="comment">// we need to reset the producer id here.</span></span><br><span class="line">    <span class="keyword">if</span> (!expiredBatches.isEmpty())</span><br><span class="line">        log.trace(<span class="string">"Expired &#123;&#125; batches in accumulator"</span>, expiredBatches.size());</span><br><span class="line">    <span class="keyword">for</span> (ProducerBatch expiredBatch : expiredBatches) &#123;</span><br><span class="line">        failBatch(expiredBatch, -<span class="number">1</span>, NO_TIMESTAMP, expiredBatch.timeoutException(), <span class="keyword">false</span>);</span><br><span class="line">        <span class="keyword">if</span> (transactionManager != <span class="keyword">null</span> &amp;&amp; expiredBatch.inRetry()) &#123;</span><br><span class="line">            <span class="comment">// This ensures that no new batches are drained until the current in flight batches are fully resolved.</span></span><br><span class="line">            transactionManager.markSequenceUnresolved(expiredBatch.topicPartition);</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    sensors.updateProduceRequestMetrics(batches);</span><br><span class="line"></span><br><span class="line">    <span class="comment">// If we have any nodes that are ready to send + have sendable data, poll with 0 timeout so this can immediately</span></span><br><span class="line">    <span class="comment">// loop and try sending more data. Otherwise, the timeout is determined by nodes that have partitions with data</span></span><br><span class="line">    <span class="comment">// that isn't yet sendable (e.g. lingering, backing off). Note that this specifically does not include nodes</span></span><br><span class="line">    <span class="comment">// with sendable data that aren't ready to send since they would cause busy looping.</span></span><br><span class="line">    <span class="keyword">long</span> pollTimeout = Math.min(result.nextReadyCheckDelayMs, notReadyTimeout);</span><br><span class="line">    <span class="keyword">if</span> (!result.readyNodes.isEmpty()) &#123;</span><br><span class="line">        log.trace(<span class="string">"Nodes with data ready to send: &#123;&#125;"</span>, result.readyNodes);</span><br><span class="line">        <span class="comment">// if some partitions are already ready to be sent, the select time would be 0;</span></span><br><span class="line">        <span class="comment">// otherwise if some partition already has some data accumulated but not ready yet,</span></span><br><span class="line">        <span class="comment">// the select time will be the time difference between now and its linger expiry time;</span></span><br><span class="line">        <span class="comment">// otherwise the select time will be the time difference between now and the metadata expiry time;</span></span><br><span class="line">        pollTimeout = <span class="number">0</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    sendProduceRequests(batches, now);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> pollTimeout;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h2 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h2><p>本文简单介绍了Kafka的基本情况，包含Producer、Consumer、Streams、Connector4个API。接着从源码入手分析了Producer发送数据到集群的过程，其主要是把数据放入缓冲，然后再从缓冲区发送数据。</p>
+
+      
+    </div>
+    <footer class="article-footer">
+      <a data-url="http://yoursite.com/2018/08/12/Kafka%E4%B9%8BProducer%E6%BA%90%E7%A0%81/" data-id="ck736a2qk0010ees6gwg3g8ry" class="article-share-link">Share</a>
+      
+      
+  <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/kafka/" rel="tag">kafka</a></li></ul>
+
+    </footer>
+  </div>
+  
+    
+<nav id="article-nav">
+  
+    <a href="/2018/08/19/Spring-Boot-Actuator-%E5%81%A5%E5%BA%B7%E6%A3%80%E6%9F%A5%E3%80%81%E5%AE%A1%E8%AE%A1%E3%80%81%E7%BB%9F%E8%AE%A1%E5%92%8C%E7%9B%91%E6%8E%A7/" id="article-nav-newer" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Newer</strong>
+      <div class="article-nav-title">
+        
+          Spring Boot Actuator:健康检查、审计、统计和监控
+        
+      </div>
+    </a>
+  
+  
+    <a href="/2018/06/25/Flink%E4%B8%AD%E7%9A%84wiki-edits%E4%BE%8B%E5%AD%90%E5%AE%9E%E8%B7%B5/" id="article-nav-older" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Older</strong>
+      <div class="article-nav-title">Flink中的wiki-edits例子实践</div>
+    </a>
+  
+</nav>
+
+  
+</article>
+
+</section>
+        
+          <aside id="sidebar">
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Categories</h3>
+    <div class="widget">
+      <ul class="category-list"><li class="category-list-item"><a class="category-list-link" href="/categories/iOS/">iOS</a></li><li class="category-list-item"><a class="category-list-link" href="/categories/%E5%A4%A7%E6%95%B0%E6%8D%AE/">大数据</a></li><li class="category-list-item"><a class="category-list-link" href="/categories/%E5%AE%89%E5%85%A8/">安全</a></li><li class="category-list-item"><a class="category-list-link" href="/categories/%E5%BE%AE%E6%9C%8D%E5%8A%A1/">微服务</a></li><li class="category-list-item"><a class="category-list-link" href="/categories/%E6%9C%BA%E5%99%A8%E5%AD%A6%E4%B9%A0/">机器学习</a></li><li class="category-list-item"><a class="category-list-link" href="/categories/%E7%88%AC%E8%99%AB/">爬虫</a></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tags</h3>
+    <div class="widget">
+      <ul class="tag-list" itemprop="keywords"><li class="tag-list-item"><a class="tag-list-link" href="/tags/Actuator/" rel="tag">Actuator</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Flink/" rel="tag">Flink</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Flume/" rel="tag">Flume</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Grafana/" rel="tag">Grafana</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Hadoop/" rel="tag">Hadoop</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/KVO/" rel="tag">KVO</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Kafka/" rel="tag">Kafka</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Objective-C/" rel="tag">Objective-C</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Prometheus/" rel="tag">Prometheus</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Spark/" rel="tag">Spark</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Spring-Boot/" rel="tag">Spring Boot</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Swift/" rel="tag">Swift</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/akka/" rel="tag">akka</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/block/" rel="tag">block</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/flink/" rel="tag">flink</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/kafka/" rel="tag">kafka</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/runloop/" rel="tag">runloop</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/runtime/" rel="tag">runtime</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/scrapy/" rel="tag">scrapy</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E5%87%BD%E6%95%B0%E6%B4%BE%E5%8F%91/" rel="tag">函数派发</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E5%93%8D%E5%BA%94%E8%BF%9E/" rel="tag">响应连</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E5%AE%89%E5%85%A8/" rel="tag">安全</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E5%AF%86%E9%92%A5/" rel="tag">密钥</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E6%9C%BA%E5%99%A8%E5%AD%A6%E4%B9%A0/" rel="tag">机器学习</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/" rel="tag">源码分析</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E7%88%AC%E8%99%AB/" rel="tag">爬虫</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E9%94%81/" rel="tag">锁</a></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tag Cloud</h3>
+    <div class="widget tagcloud">
+      <a href="/tags/Actuator/" style="font-size: 12.5px;">Actuator</a> <a href="/tags/Flink/" style="font-size: 12.5px;">Flink</a> <a href="/tags/Flume/" style="font-size: 10px;">Flume</a> <a href="/tags/Grafana/" style="font-size: 10px;">Grafana</a> <a href="/tags/Hadoop/" style="font-size: 12.5px;">Hadoop</a> <a href="/tags/KVO/" style="font-size: 10px;">KVO</a> <a href="/tags/Kafka/" style="font-size: 10px;">Kafka</a> <a href="/tags/Objective-C/" style="font-size: 20px;">Objective-C</a> <a href="/tags/Prometheus/" style="font-size: 10px;">Prometheus</a> <a href="/tags/Spark/" style="font-size: 10px;">Spark</a> <a href="/tags/Spring-Boot/" style="font-size: 12.5px;">Spring Boot</a> <a href="/tags/Swift/" style="font-size: 12.5px;">Swift</a> <a href="/tags/akka/" style="font-size: 10px;">akka</a> <a href="/tags/block/" style="font-size: 10px;">block</a> <a href="/tags/flink/" style="font-size: 15px;">flink</a> <a href="/tags/kafka/" style="font-size: 12.5px;">kafka</a> <a href="/tags/runloop/" style="font-size: 10px;">runloop</a> <a href="/tags/runtime/" style="font-size: 10px;">runtime</a> <a href="/tags/scrapy/" style="font-size: 10px;">scrapy</a> <a href="/tags/%E5%87%BD%E6%95%B0%E6%B4%BE%E5%8F%91/" style="font-size: 10px;">函数派发</a> <a href="/tags/%E5%93%8D%E5%BA%94%E8%BF%9E/" style="font-size: 10px;">响应连</a> <a href="/tags/%E5%AE%89%E5%85%A8/" style="font-size: 10px;">安全</a> <a href="/tags/%E5%AF%86%E9%92%A5/" style="font-size: 10px;">密钥</a> <a href="/tags/%E6%9C%BA%E5%99%A8%E5%AD%A6%E4%B9%A0/" style="font-size: 12.5px;">机器学习</a> <a href="/tags/%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/" style="font-size: 17.5px;">源码分析</a> <a href="/tags/%E7%88%AC%E8%99%AB/" style="font-size: 10px;">爬虫</a> <a href="/tags/%E9%94%81/" style="font-size: 10px;">锁</a>
+    </div>
+  </div>
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Archives</h3>
+    <div class="widget">
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2020/02/">February 2020</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/11/">November 2019</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2018/12/">December 2018</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2018/11/">November 2018</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2018/08/">August 2018</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2018/06/">June 2018</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2018/04/">April 2018</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2018/03/">March 2018</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2018/01/">January 2018</a></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Recent Posts</h3>
+    <div class="widget">
+      <ul>
+        
+          <li>
+            <a href="/2020/02/20/%E6%B7%B1%E5%85%A5%E7%90%86%E8%A7%A3Flink%E7%BD%91%E7%BB%9C%E6%A0%88%E5%8F%8A%E8%83%8C%E5%8E%8B%E7%9B%91%E6%8E%A7/">深入理解Flink网络栈及背压监控</a>
+          </li>
+        
+          <li>
+            <a href="/2019/11/08/%E5%A6%82%E4%BD%95%E8%AE%A1%E7%AE%97Flink%E9%9B%86%E7%BE%A4%E8%A7%84%E6%A8%A1%EF%BC%9A%E4%BF%A1%E5%B0%81%E8%83%8C%E8%AE%A1%E7%AE%97%E6%B3%95/">如何计算Flink集群规模：信封背计算法</a>
+          </li>
+        
+          <li>
+            <a href="/2018/12/22/%E5%A6%82%E4%BD%95%E6%90%AD%E5%BB%BA%E9%AB%98%E5%8F%AF%E7%94%A8Hadoop%E9%9B%86%E7%BE%A4/">如何搭建高可用Hadoop集群</a>
+          </li>
+        
+          <li>
+            <a href="/2018/11/13/Akka%E5%9C%A8Flink%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8/">Akka在Flink中的应用</a>
+          </li>
+        
+          <li>
+            <a href="/2018/08/19/Spring-Boot-Metrics%E7%9B%91%E6%8E%A7%E4%B9%8BPrometheus-Grafana/">Spring Boot Metrics监控之Prometheus&amp;Grafana</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+
+  
+</aside>
+        
+      </div>
+      <footer id="footer">
+  
+  <div class="outer">
+    <div id="footer-info" class="inner">
+      &copy; 2020 MrHup<br>
+      Powered by <a href="http://hexo.io/" target="_blank">Hexo</a>
+    </div>
+  </div>
+</footer>
+    </div>
+    <nav id="mobile-nav">
+  
+    <a href="/" class="mobile-nav-link">Home</a>
+  
+    <a href="/archives" class="mobile-nav-link">Archives</a>
+  
+</nav>
+    
+
+<script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
+
+
+  
+<link rel="stylesheet" href="/fancybox/jquery.fancybox.css">
+
+  
+<script src="/fancybox/jquery.fancybox.pack.js"></script>
+
+
+
+
+<script src="/js/script.js"></script>
+
+
+
+
+  </div>
+</body>
+</html>

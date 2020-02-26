@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  
+
+  
+  <title>解析objc_msgSend(ARM64) | MrHup.code</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="description" content="概览每个Objective-C对象都有相应的类，这个类都有一个方法列表。类中的每个方法都有一个选择子、一个指向方法实现的函数指针和一些元数据。objc_msgSend的工作就是通过传入的对象和选择子，查找相应方法的函数指针，然后跳转到该函数指针。 查找方法的流程是非常复杂的。如果这个方法没有在对应的类上被找到，就会到该类的父类中去查询。如果所有类都没有这个方法，那么就会调用runtime消息中的f">
+<meta property="og:type" content="article">
+<meta property="og:title" content="解析objc_msgSend(ARM64)">
+<meta property="og:url" content="http://yoursite.com/2018/01/29/%E8%A7%A3%E6%9E%90objc-msgSend-ARM64/index.html">
+<meta property="og:site_name" content="MrHup.code">
+<meta property="og:description" content="概览每个Objective-C对象都有相应的类，这个类都有一个方法列表。类中的每个方法都有一个选择子、一个指向方法实现的函数指针和一些元数据。objc_msgSend的工作就是通过传入的对象和选择子，查找相应方法的函数指针，然后跳转到该函数指针。 查找方法的流程是非常复杂的。如果这个方法没有在对应的类上被找到，就会到该类的父类中去查询。如果所有类都没有这个方法，那么就会调用runtime消息中的f">
+<meta property="og:locale" content="cn">
+<meta property="article:published_time" content="2018-01-29T15:54:39.000Z">
+<meta property="article:modified_time" content="2020-02-26T10:14:59.973Z">
+<meta property="article:author" content="MrHup">
+<meta property="article:tag" content="源码分析">
+<meta property="article:tag" content="Objective-C">
+<meta name="twitter:card" content="summary">
+  
+    <link rel="alternate" href="/atom.xml" title="MrHup.code" type="application/atom+xml">
+  
+  
+    <link rel="icon" href="/favicon.png">
+  
+  
+    <link href="//fonts.googleapis.com/css?family=Source+Code+Pro" rel="stylesheet" type="text/css">
+  
+  
+<link rel="stylesheet" href="/css/style.css">
+
+<meta name="generator" content="Hexo 4.2.0"></head>
+
+<body>
+  <div id="container">
+    <div id="wrap">
+      <header id="header">
+  <div id="banner"></div>
+  <div id="header-outer" class="outer">
+    <div id="header-title" class="inner">
+      <h1 id="logo-wrap">
+        <a href="/" id="logo">MrHup.code</a>
+      </h1>
+      
+        <h2 id="subtitle-wrap">
+          <a href="/" id="subtitle">HeapAndStack</a>
+        </h2>
+      
+    </div>
+    <div id="header-inner" class="inner">
+      <nav id="main-nav">
+        <a id="main-nav-toggle" class="nav-icon"></a>
+        
+          <a class="main-nav-link" href="/">Home</a>
+        
+          <a class="main-nav-link" href="/archives">Archives</a>
+        
+      </nav>
+      <nav id="sub-nav">
+        
+          <a id="nav-rss-link" class="nav-icon" href="/atom.xml" title="RSS Feed"></a>
+        
+        <a id="nav-search-btn" class="nav-icon" title="Search"></a>
+      </nav>
+      <div id="search-form-wrap">
+        <form action="//google.com/search" method="get" accept-charset="UTF-8" class="search-form"><input type="search" name="q" class="search-form-input" placeholder="Search"><button type="submit" class="search-form-submit">&#xF002;</button><input type="hidden" name="sitesearch" value="http://yoursite.com"></form>
+      </div>
+    </div>
+  </div>
+</header>
+      <div class="outer">
+        <section id="main"><article id="post-解析objc-msgSend-ARM64" class="article article-type-post" itemscope itemprop="blogPost">
+  <div class="article-meta">
+    <a href="/2018/01/29/%E8%A7%A3%E6%9E%90objc-msgSend-ARM64/" class="article-date">
+  <time datetime="2018-01-29T15:54:39.000Z" itemprop="datePublished">2018-01-29</time>
+</a>
+    
+  <div class="article-category">
+    <a class="article-category-link" href="/categories/iOS/">iOS</a>
+  </div>
+
+  </div>
+  <div class="article-inner">
+    
+    
+      <header class="article-header">
+        
+  
+    <h1 class="article-title" itemprop="name">
+      解析objc_msgSend(ARM64)
+    </h1>
+  
+
+      </header>
+    
+    <div class="article-entry" itemprop="articleBody">
+      
+        <h2 id="概览"><a href="#概览" class="headerlink" title="概览"></a>概览</h2><p>每个Objective-C对象都有相应的类，这个类都有一个方法列表。类中的每个方法都有一个选择子、一个指向方法实现的函数指针和一些元数据。<code>objc_msgSend</code>的工作就是通过传入的对象和选择子，查找相应方法的函数指针，然后跳转到该函数指针。</p>
+<p>查找方法的流程是非常复杂的。如果这个方法没有在对应的类上被找到，就会到该类的父类中去查询。如果所有类都没有这个方法，那么就会调用runtime消息中的<code>forwarding</code>代码。如果这是发送到该类上的第一条消息，就同时会调用该类的<code>+initialize</code>方法。</p>
+<p>但是在一般情况下，查询方法需要非常快，因为有成千上万次查询。这就与前面复杂的查找过程相矛盾了。</p>
+<p>Objective-C解决这个冲突的方法是方法缓存。每个类都有一个方法缓存，它将方法存储为选择子和函数指针的键值对，这个函数指针在Objective-C中被称为<code>IMPS</code>。这个选择子和函数指针键值对被存为一个哈希表，所以查找速度很快。查找方法时，<code>runtime</code>首先查询缓存。如果方法不在缓存中，则进入相对慢且复杂的进一步查询。查到之后会将结果放入缓存中，这样下一次查询更快。</p>
+<p><code>objc_msgSend</code>是用汇编写的。原因有二：一是不能编写保留未知参数的函数，并跳转到C中的任意函数指针。C语言没有必要的特性来做这样的事情。二是<code>objc_msgSend</code>需要保证快速的查询，那就需要直接操作指令来保证。</p>
+<p>当然，你不需要用汇编语言编写整个复杂的消息查找程序。<code>objc_msgSend</code>的代码可以分为两部分：一是<code>objc_msgSend</code>缓存查询，它是用汇编写的，二是分级查询，是用C实现的。汇编部分在高速缓存中查找方法，如果发现该方法就跳转到该方法上。如果该方法不在缓存中，则调用C代码来处理进一步的查询。</p>
+<p>总的来说，在调用<code>objc_msgSend</code>时会执行以下操作：</p>
+<ol>
+<li>获取传入的对象的类。</li>
+<li>获取该类的方法缓存。</li>
+<li>使用传入的选择器来查找缓存中的方法。</li>
+<li>如果不在缓存中，则调用C代码。</li>
+<li>跳转到该方法的IMP。</li>
+</ol>
+<h2 id="用汇编查询缓存"><a href="#用汇编查询缓存" class="headerlink" title="用汇编查询缓存"></a>用汇编查询缓存</h2><p><code>objc_msgSend</code>根据具体情况可以采取不同的查询策略，比如消息发送到<code>nil</code>、标记的指针(<a href="https://www.mikeash.com/pyblog/friday-qa-2012-07-27-lets-build-tagged-pointers.html" target="_blank" rel="noopener">tagged pointers</a>)和哈希表的冲突等情况。首先看看最常见的情况：即将消息发送到非<code>nil</code>非标记指针，同时在高速缓存中找到了该方法，而无需进行进一步扫描查询。对于其他的特殊情况，我们在分析完常见情形时再来分析。</p>
+<p>在这里，每条指令前面都有一个从函数开始的偏移量。这作为一个计数器，让你识别跳转目标。</p>
+<p><code>ARM64</code>有31个整型寄存器，从<code>x0</code>到<code>x31</code>，它们是64位的。同时也可以使用<code>w0</code>到<code>w30</code>访问每个寄存器的低32位，就像它是一个单独的寄存器一样。寄存器<code>x0</code>到<code>x7</code>用于将前8个参数传递给函数。这意味着objc_msgSend接收<code>x0</code>中的<code>self</code>参数和<code>x1</code>中的选择子<code>_cmd</code>参数。</p>
+<p>让我们开始！</p>
+<pre><code>0x0000 cmp     x0, #0x0
+0x0004 b.le    0x6c</code></pre><p>如果<code>self(x0)</code>小于等于0，则跳转到别处。0代表<code>nil</code>，则处理message发送到nil的特殊情况。这里同时也处理标记指针。在<code>ARM64</code>上标记指针设置高32位(在<code>x86-64</code>上是低32位)。如果设置了高位，那么对于有符号整数时，该值为负。对于<code>self</code>是普通指针的常见情况，将不会进入该分支。</p>
+<pre><code>0x0008 ldr    x13, [x0]</code></pre><p>通过加载<code>x0</code>来加载<code>self</code>的<code>isa</code>，其中包含<code>self</code>。现在<code>x13</code>寄存器包含<code>isa</code>。</p>
+<pre><code>0x000c and    x16, x13, #0xffffffff8</code></pre><p>ARM64可以使用<a href="http://www.sealiesoftware.com/blog/archive/2013/09/24/objc_explain_Non-pointer_isa.html" target="_blank" rel="noopener">非指针的isas</a>。传统上<code>isa</code>指向对象的类，而非指针<code>isa</code>则通过空闲位将一些其他信息填充到<code>isa</code>中来。该指令执行一个逻辑与来过滤所有的额外位信息，并将实际的类指针信息放入<code>x16</code>中。</p>
+<pre><code>0x0010 ldp    x10, x11, [x16, #0x10]</code></pre><p>它将类的缓存信息加载到<code>x10</code>和<code>x11</code>中。 <code>ldp</code>指令将两个寄存器的内存数据加载到前两个参数中指定的寄存器中。第三个参数描述了从哪里加载数据，在这里，从<code>x16</code>的偏移量16(十进制)的位置开始，这是类中保存高速缓存信息的区域。缓存结构体代码如下：</p>
+<pre><code>typedef uint32_t mask_t;
+
+struct cache_t {
+    struct bucket_t *_buckets;
+    mask_t _mask;
+    mask_t _occupied;
+}</code></pre><p>从<code>ldp</code>指令看，<code>x10</code>储存<code>_buckets</code>的值，而<code>x11</code>的高32位存储<code>_occupied</code>的值，低32位存储<code>_mask</code>的值。</p>
+<p><code>_occupied</code>字段表示哈希表包含多少条目，在<code>objc_msgSend</code>中不起作用。 <code>_mask</code>字段非常重要：它将哈希表的大小描述为一个掩码，值始终是2的幂减1，像000000001111111这种二进制形式。这个值用来计算选择子的查找索引，同时可以在查询列表时返回到列表末端。</p>
+<pre><code>0x0014 and    w12, w1, w11</code></pre><p>该指令找寻以<code>_cmd</code>形式传入的选择子在哈希始表中的索引。<code>x1</code>包含<code>_cmd</code>，所以<code>w1</code>包含<code>_cmd</code>的低32位。 <code>w11</code>包含如上所述的<code>_mask</code>。该指令将两者逻辑与后放入<code>w12</code>。这个结果相当于<code>_cmd</code> ％ <code>table_size</code>的值。</p>
+<pre><code>0x0018 add    x12, x10, x12, lsl #4</code></pre><p>要想从哈希表中加载数据，需要知道其实际地址，因此只有索引还不够。该指令将左移4位的哈希表索引和<code>bucket</code>地址相加后赋值给<code>x12</code>，因为每个哈希表<code>bucket</code>都是16字节。现在<code>x12</code>指向了要搜索的第一个<code>bucket</code>的地址。</p>
+<pre><code>0x001c ldp    x9, x17, [x12]</code></pre><p>该指令加载<code>x12</code>(当前<code>bucket</code>)的地址给<code>x9</code>和<code>x17</code>。每个<code>bucket</code>包含一个选择子和一个<code>IMP</code>。 <code>x9</code>现在指向当前<code>bucket</code>的选择子，<code>x17</code>指向当前<code>bucket</code>的<code>IMP</code>。</p>
+<pre><code>0x0020 cmp    x9, x1
+0x0024 b.ne   0x2c</code></pre><p>这些指令将<code>x9</code>中的选择子与<code>x1</code>中的<code>_cmd</code>进行比较。如果它们不匹配，那么当前的<code>bucket</code>不包含我们正在查找的选择子。在这种情况下，第二条指令跳转到偏移<code>0x2c</code>，用来处理不匹配的<code>bucket</code>。如果匹配到选择子，那么就找到了正在查找的条目，并继续执行下一条指令。</p>
+<pre><code>0x0028 br    x17</code></pre><p>这里无条件跳转到<code>x17</code>，它包含当前<code>bucket</code>加载的<code>IMP</code>。在这里执行实际的目标方法的实现函数，同时也是<code>objc_msgSend</code>的快速查询的最终阶段。由于所有参数寄存器都不受干扰，因此目标方法将接收所有传入的参数，就如同直接调用一样。<br>当所有的方法都被缓存后，在如今的硬件设备上快速查询的时间会小于3纳秒。</p>
+<p>接着让我们看一下没有匹配到缓存(<code>bucket</code>)的代码逻辑。</p>
+<pre><code>0x002c cbz    x9, __objc_msgSend_uncached</code></pre><p>x9包含从<code>bucket</code>中加载的选择子。该指令将其与0进行比较，如果为0，则跳转到<code>__objc_msgSend_uncached</code>。没有选择子代表<code>bucket</code>是空的，也就是搜索失败。如果目标方法不在高速缓存中，就需要执行C代码来进行更全面查找。</p>
+<pre><code>0x0030 cmp    x12, x10
+0x0034 b.eq   0x40</code></pre><p>该指令比较<code>x12</code>中的当前<code>bucket</code>地址与<code>x10</code>中的哈希表的起始地址。如果匹配，则跳转到<code>0x40</code> 。<br>在这里执行的哈希表搜索实际上是反向运行的。搜索从末尾到起始地址。</p>
+<pre><code>0x0038 ldp    x9, x17, [x12, #-0x10]!</code></pre><p><code>ldp</code>加载当前<code>bucket</code>的地址偏移<code>0x10</code>的地址，也就是上一个<code>bucket</code>地址，并赋值给<code>x9</code>和<code>x17</code>。地址末尾的感叹号表示寄存器写回，是用新值更新旧值。</p>
+<pre><code>0x003c b      0x20</code></pre><p>这里循环跳会上面的<code>0x0020</code>的指令。也就是不停的对比<code>bucket</code>，直到找到一个相同的<code>bucket</code>，或者一直没找到直到哈希表的开始位置。</p>
+<pre><code>0x0040 add    x12, x12, w11, uxtw #4</code></pre><p>跳转到<code>0x0040</code>是，<code>x12</code>已经指向哈希表的开始， 而<code>w11</code>表示哈希表的掩码，也就是表的大小。将<code>w11</code>左移4位后将这两者相加，结果是新的<code>x12</code>再次指向表的末尾。再次从尾到头进行搜索。</p>
+<pre><code>0x0044 ldp    x9, x17, [x12]</code></pre><p>现在<code>ldp</code>将新的bucket载入<code>x9</code>和<code>x17</code>。</p>
+<pre><code>0x0048 cmp    x9, x1
+0x004c b.ne   0x54
+0x0050 br     x17</code></pre><p>该代码检查当前<code>bucket</code>于传入的<code>_cmd</code>否匹配，匹配跳转到<code>bucket</code>的IMP，不匹配跳转到<code>0x54</code>。这是上面<code>0x0020</code>代码的重复。</p>
+<pre><code>0x0054 cbz    x9, __objc_msgSend_uncached</code></pre><p>就像之前一样，如果<code>bucket</code>是空的，那么这是一个缓存未命中并且执行C实现的综合查找代码。</p>
+<pre><code>0x0058 cmp    x12, x10
+0x005c b.eq   0x68</code></pre><p>接着再次检查当前的<code>bucket</code>是否到了哈希表的起始，如果再次运行到表的起始，则跳转到<code>0x68</code>。在这种情况下，它跳转到C代码的全面查找：</p>
+<pre><code>0x0068 b      __objc_msgSend_uncached</code></pre><p>那为什么会出现这个重新扫描呢？源码的解释如下：<br>当缓存损坏时，克隆扫描循环而不是挂起循环。全面查找时可能会检测到任何损坏并在稍后停止这个循环。<br>这种情况不常见，但显然苹果开发人员看到由于内存损坏导致缓存充满了损坏的内容，并跳转到C代码来提高诊断。<br>这个再次检查对正常的代码应该影响很小。没有它，原来的循环可以被重用，这将节省一些指令缓存空间，但只节省一点点。只有对于在哈希表起始附近的选择子，同时发生冲突并且所有先前的条目被占用时，重新扫描才会被调用。</p>
+<pre><code>0x0060 ldp    x9, x17, [x12, #-0x10]!
+0x0064 b      0x48</code></pre><p>这个循环的其余部分与之前一样。将下一个<code>bucket</code>加载到<code>x9</code>和<code>x17</code>中，更新<code>x12</code>中的<code>bucket</code>指针，然后返回到循环的顶部。</p>
+<p>这样<code>objc_msgSend</code>主体就结束了。那么nil和标记指针的特殊情况是如何的呢？</p>
+<h2 id="标记指针-Tagged-Pointer-的处理"><a href="#标记指针-Tagged-Pointer-的处理" class="headerlink" title="标记指针(Tagged Pointer)的处理"></a>标记指针(Tagged Pointer)的处理</h2><p>你可能回忆起在指令最开始的检查，跳转到<code>0x6c</code>来处理这种情况。</p>
+<pre><code>0x006c b.eq    0xa4</code></pre><p>进入这个逻辑是因为<code>self</code>小于等于0。小于0表示一个标记指针，等于0表示为nil。这两种情况的处理是完全不同的。首先检查是第一种情况还是第二种情况。如果等于0跳转到<code>0xa4</code>。如果不是，继续执行下一条指令。</p>
+<p>先简要的说明一下标记指针是如何工作的。标记指针(ARM64)的高4位指明这个对象属于哪个类。这对于标记指针的<code>isa</code>是必要的。当然，4bit几乎不足以拥有一个类指针。因此，有一张特殊的表来存储可用的标记指针类。一个标记指针对象的类通过高4位来查询这张表中的相应的类。</p>
+<p>继续。</p>
+<pre><code>0x0070 mov    x10, #-0x1000000000000000</code></pre><p>这条指令设置<code>x10</code>的高4位都为1，其他都为0。</p>
+<pre><code>0x0074 cmp    x0, x10
+0x0078 b.hs   0x90</code></pre><p>然后看<code>x0</code>是否大于等于<code>x10</code>，如果大于等于则表明是标记指针，则跳到<code>0x90</code>处理额外的类。否则，就直接使用主标记指针表(primary tagged pointer table)。</p>
+<pre><code>0x007c adrp   x10, _objc_debug_taggedpointer_classes@PAGE
+0x0080 add    x10, x10, _objc_debug_taggedpointer_classes@PAGEOFF</code></pre><p><code>_objc_debug_taggedpointer_classes</code>是主标记指针表。ARM64需要两条指令加载一个符号地址，因为ARM64是64位的，而指令仅只有32位。因此不可能用一条指令来表示一个完整的指针。<br>x86就不会遇到这个问题，因为它有变长的指令。对于定长指令的机器，需要分片加载。</p>
+<pre><code>0x0084 lsr    x11, x0, #60</code></pre><p>标记类的索引在<code>x0</code>中的高4位，为了作为索引使用，需要右移60位，使它的范围变为0-15。这条指令把结果存入<code>x11</code>。</p>
+<pre><code>0x0088 ldr    x16, [x10, x11, lsl #3]</code></pre><p>这条指令通过索引来加载主标记指针表中的标记指针。现在<code>x16</code>包含这个类的标记指针。</p>
+<pre><code>0x008c b      0x10</code></pre><p>当<code>x16</code>包含了这个类的标记指针时，就可以返回到上面主分支代码的<code>0x10</code>。</p>
+<pre><code>0x0090 adrp   x10, _objc_debug_taggedpointer_ext_classes@PAGE
+0x0094 add    x10, x10, _objc_debug_taggedpointer_ext_classes@PAGEOFF</code></pre><p>额外的标记类处理起来类似。两条指令加载一个指向额外表的指针。</p>
+<pre><code>0x0098 ubfx   x11, x0, #52, #8</code></pre><p>这条指令加载额外的类索引。它从<code>self</code>中提取52位中的前8位到<code>x11</code>。</p>
+<pre><code>0x009c ldr    x16, [x10, x11, lsl #3]</code></pre><p>像之前一样，利用索引来找寻表中的类，并赋值给<code>x16</code>。</p>
+<pre><code>0x00a0 b      0x10</code></pre><p>得到了<code>x16</code>，就可以继续回到主分支代码执行<code>0x10</code>。</p>
+<h2 id="nil处理"><a href="#nil处理" class="headerlink" title="nil处理"></a>nil处理</h2><p>终于到了nil的处理逻辑。以下是全部指令：</p>
+<pre><code>0x00a4 mov    x1, #0x0
+0x00a8 movi   d0, #0000000000000000
+0x00ac movi   d1, #0000000000000000
+0x00b0 movi   d2, #0000000000000000
+0x00b4 movi   d3, #0000000000000000
+0x00b8 ret</code></pre><p><code>nil</code>的处理是完全不同的，它没有类查询和方法分发。它做的只是返回0给调用者。</p>
+<p>实际上<code>objc_msgSend</code>不知道调用者期望哪一种返回值。是返回一个整数、两个整数或者浮点值呢，还是什么都没有返回？</p>
+<p>幸好，寄存器可以被安全的重写。整数存在<code>x0</code>和<code>x1</code>中，浮点数存在<code>v0</code>-<code>v3</code>中。多个寄存器被用来返回一个小的结构体。</p>
+<p>代码清空了<code>x1</code>和<code>v0</code>-<code>v3</code>。<code>d0</code>-<code>d3</code>表示<code>v0</code>-<code>v3</code>的低32位。因此<code>movi</code>在这清空了上述4个寄存器。这之后，返回<code>ret</code>给调用者。</p>
+<p>你可以会问为什么不清空<code>x0</code>。因为<code>x0</code>在这时本身就是空的，所以就不需要清空。</p>
+<p>如果需要返回一个大的结构体，而现有的寄存器无法满足呢？这需要调用者的合作。大的结构体返回需要调用者申请足够大的内存。<code>objc_msgSend</code>不能清空内存，因为它不知道返回值有多大。为解决这个问题，在调用<code>objc_msgSend</code>之前，编译器自动生成代码把内存都填充为0。</p>
+<h2 id="结论"><a href="#结论" class="headerlink" title="结论"></a>结论</h2><p>探究框架的内部实现往往是非常有趣的。通过阅读源码，可以看到<code>objc_msgSend</code>极具艺术性且实现的非常优雅。</p>
+<h2 id="参考"><a href="#参考" class="headerlink" title="参考"></a>参考</h2><p><a href="https://www.mikeash.com/pyblog/friday-qa-2017-06-30-dissecting-objc_msgsend-on-arm64.html" target="_blank" rel="noopener">Dissecting objc_msgSend on ARM64</a><br><a href="http://infocenter.arm.com/help/index.jsp?topic=/com.arm.doc.dui0204ic/Cjahjhee.html" target="_blank" rel="noopener">arm</a><br><a href="http://www.sealiesoftware.com/blog/archive/2013/09/24/objc_explain_Non-pointer_isa.html" target="_blank" rel="noopener">Non-pointer isa</a></p>
+
+      
+    </div>
+    <footer class="article-footer">
+      <a data-url="http://yoursite.com/2018/01/29/%E8%A7%A3%E6%9E%90objc-msgSend-ARM64/" data-id="ck736a2r7002uees6gi6847oq" class="article-share-link">Share</a>
+      
+      
+  <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/Objective-C/" rel="tag">Objective-C</a></li><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/" rel="tag">源码分析</a></li></ul>
+
+    </footer>
+  </div>
+  
+    
+<nav id="article-nav">
+  
+    <a href="/2018/01/30/Category%E4%B8%8EExtension/" id="article-nav-newer" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Newer</strong>
+      <div class="article-nav-title">
+        
+          Category与Extension
+        
+      </div>
+    </a>
+  
+  
+    <a href="/2018/01/29/Objective-C-Runtime%E4%B8%AD%E7%9A%84%E5%B9%B6%E5%8F%91%E5%86%85%E5%AD%98%E9%87%8A%E6%94%BE/" id="article-nav-older" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Older</strong>
+      <div class="article-nav-title">Objective-C Runtime中的并发内存释放</div>
+    </a>
+  
+</nav>
+
+  
+</article>
+
+</section>
+        
+          <aside id="sidebar">
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Categories</h3>
+    <div class="widget">
+      <ul class="category-list"><li class="category-list-item"><a class="category-list-link" href="/categories/iOS/">iOS</a></li><li class="category-list-item"><a class="category-list-link" href="/categories/%E5%A4%A7%E6%95%B0%E6%8D%AE/">大数据</a></li><li class="category-list-item"><a class="category-list-link" href="/categories/%E5%AE%89%E5%85%A8/">安全</a></li><li class="category-list-item"><a class="category-list-link" href="/categories/%E5%BE%AE%E6%9C%8D%E5%8A%A1/">微服务</a></li><li class="category-list-item"><a class="category-list-link" href="/categories/%E6%9C%BA%E5%99%A8%E5%AD%A6%E4%B9%A0/">机器学习</a></li><li class="category-list-item"><a class="category-list-link" href="/categories/%E7%88%AC%E8%99%AB/">爬虫</a></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tags</h3>
+    <div class="widget">
+      <ul class="tag-list" itemprop="keywords"><li class="tag-list-item"><a class="tag-list-link" href="/tags/Actuator/" rel="tag">Actuator</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Flink/" rel="tag">Flink</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Flume/" rel="tag">Flume</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Grafana/" rel="tag">Grafana</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Hadoop/" rel="tag">Hadoop</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/KVO/" rel="tag">KVO</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Kafka/" rel="tag">Kafka</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Objective-C/" rel="tag">Objective-C</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Prometheus/" rel="tag">Prometheus</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Spark/" rel="tag">Spark</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Spring-Boot/" rel="tag">Spring Boot</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Swift/" rel="tag">Swift</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/akka/" rel="tag">akka</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/block/" rel="tag">block</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/flink/" rel="tag">flink</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/kafka/" rel="tag">kafka</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/runloop/" rel="tag">runloop</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/runtime/" rel="tag">runtime</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/scrapy/" rel="tag">scrapy</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E5%87%BD%E6%95%B0%E6%B4%BE%E5%8F%91/" rel="tag">函数派发</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E5%93%8D%E5%BA%94%E8%BF%9E/" rel="tag">响应连</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E5%AE%89%E5%85%A8/" rel="tag">安全</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E5%AF%86%E9%92%A5/" rel="tag">密钥</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E6%9C%BA%E5%99%A8%E5%AD%A6%E4%B9%A0/" rel="tag">机器学习</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/" rel="tag">源码分析</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E7%88%AC%E8%99%AB/" rel="tag">爬虫</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E9%94%81/" rel="tag">锁</a></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tag Cloud</h3>
+    <div class="widget tagcloud">
+      <a href="/tags/Actuator/" style="font-size: 12.5px;">Actuator</a> <a href="/tags/Flink/" style="font-size: 12.5px;">Flink</a> <a href="/tags/Flume/" style="font-size: 10px;">Flume</a> <a href="/tags/Grafana/" style="font-size: 10px;">Grafana</a> <a href="/tags/Hadoop/" style="font-size: 12.5px;">Hadoop</a> <a href="/tags/KVO/" style="font-size: 10px;">KVO</a> <a href="/tags/Kafka/" style="font-size: 10px;">Kafka</a> <a href="/tags/Objective-C/" style="font-size: 20px;">Objective-C</a> <a href="/tags/Prometheus/" style="font-size: 10px;">Prometheus</a> <a href="/tags/Spark/" style="font-size: 10px;">Spark</a> <a href="/tags/Spring-Boot/" style="font-size: 12.5px;">Spring Boot</a> <a href="/tags/Swift/" style="font-size: 12.5px;">Swift</a> <a href="/tags/akka/" style="font-size: 10px;">akka</a> <a href="/tags/block/" style="font-size: 10px;">block</a> <a href="/tags/flink/" style="font-size: 15px;">flink</a> <a href="/tags/kafka/" style="font-size: 12.5px;">kafka</a> <a href="/tags/runloop/" style="font-size: 10px;">runloop</a> <a href="/tags/runtime/" style="font-size: 10px;">runtime</a> <a href="/tags/scrapy/" style="font-size: 10px;">scrapy</a> <a href="/tags/%E5%87%BD%E6%95%B0%E6%B4%BE%E5%8F%91/" style="font-size: 10px;">函数派发</a> <a href="/tags/%E5%93%8D%E5%BA%94%E8%BF%9E/" style="font-size: 10px;">响应连</a> <a href="/tags/%E5%AE%89%E5%85%A8/" style="font-size: 10px;">安全</a> <a href="/tags/%E5%AF%86%E9%92%A5/" style="font-size: 10px;">密钥</a> <a href="/tags/%E6%9C%BA%E5%99%A8%E5%AD%A6%E4%B9%A0/" style="font-size: 12.5px;">机器学习</a> <a href="/tags/%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/" style="font-size: 17.5px;">源码分析</a> <a href="/tags/%E7%88%AC%E8%99%AB/" style="font-size: 10px;">爬虫</a> <a href="/tags/%E9%94%81/" style="font-size: 10px;">锁</a>
+    </div>
+  </div>
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Archives</h3>
+    <div class="widget">
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2020/02/">February 2020</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/11/">November 2019</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2018/12/">December 2018</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2018/11/">November 2018</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2018/08/">August 2018</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2018/06/">June 2018</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2018/04/">April 2018</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2018/03/">March 2018</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2018/01/">January 2018</a></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Recent Posts</h3>
+    <div class="widget">
+      <ul>
+        
+          <li>
+            <a href="/2020/02/20/%E6%B7%B1%E5%85%A5%E7%90%86%E8%A7%A3Flink%E7%BD%91%E7%BB%9C%E6%A0%88%E5%8F%8A%E8%83%8C%E5%8E%8B%E7%9B%91%E6%8E%A7/">深入理解Flink网络栈及背压监控</a>
+          </li>
+        
+          <li>
+            <a href="/2019/11/08/%E5%A6%82%E4%BD%95%E8%AE%A1%E7%AE%97Flink%E9%9B%86%E7%BE%A4%E8%A7%84%E6%A8%A1%EF%BC%9A%E4%BF%A1%E5%B0%81%E8%83%8C%E8%AE%A1%E7%AE%97%E6%B3%95/">如何计算Flink集群规模：信封背计算法</a>
+          </li>
+        
+          <li>
+            <a href="/2018/12/22/%E5%A6%82%E4%BD%95%E6%90%AD%E5%BB%BA%E9%AB%98%E5%8F%AF%E7%94%A8Hadoop%E9%9B%86%E7%BE%A4/">如何搭建高可用Hadoop集群</a>
+          </li>
+        
+          <li>
+            <a href="/2018/11/13/Akka%E5%9C%A8Flink%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8/">Akka在Flink中的应用</a>
+          </li>
+        
+          <li>
+            <a href="/2018/08/19/Spring-Boot-Metrics%E7%9B%91%E6%8E%A7%E4%B9%8BPrometheus-Grafana/">Spring Boot Metrics监控之Prometheus&amp;Grafana</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+
+  
+</aside>
+        
+      </div>
+      <footer id="footer">
+  
+  <div class="outer">
+    <div id="footer-info" class="inner">
+      &copy; 2020 MrHup<br>
+      Powered by <a href="http://hexo.io/" target="_blank">Hexo</a>
+    </div>
+  </div>
+</footer>
+    </div>
+    <nav id="mobile-nav">
+  
+    <a href="/" class="mobile-nav-link">Home</a>
+  
+    <a href="/archives" class="mobile-nav-link">Archives</a>
+  
+</nav>
+    
+
+<script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
+
+
+  
+<link rel="stylesheet" href="/fancybox/jquery.fancybox.css">
+
+  
+<script src="/fancybox/jquery.fancybox.pack.js"></script>
+
+
+
+
+<script src="/js/script.js"></script>
+
+
+
+
+  </div>
+</body>
+</html>
