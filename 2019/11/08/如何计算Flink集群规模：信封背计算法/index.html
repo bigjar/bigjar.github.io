@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  
+
+  
+  <title>如何计算Flink集群规模：信封背计算法 | MrHup.code</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="description" content="2017年柏林Flink Forward大会上Robert Metger的”Keep It Going: How to Reiably and Efficiently Operate Apache Flink”的演讲很受欢迎。Robert的其中一个主题演讲涉及到了如何估算Flink集群规模。Flink Forward大会的观众们认为这个计算方法对他们很有用，因此我们把他的演讲主题转变成这篇博客。">
+<meta property="og:type" content="article">
+<meta property="og:title" content="如何计算Flink集群规模：信封背计算法">
+<meta property="og:url" content="http://yoursite.com/2019/11/08/%E5%A6%82%E4%BD%95%E8%AE%A1%E7%AE%97Flink%E9%9B%86%E7%BE%A4%E8%A7%84%E6%A8%A1%EF%BC%9A%E4%BF%A1%E5%B0%81%E8%83%8C%E8%AE%A1%E7%AE%97%E6%B3%95/index.html">
+<meta property="og:site_name" content="MrHup.code">
+<meta property="og:description" content="2017年柏林Flink Forward大会上Robert Metger的”Keep It Going: How to Reiably and Efficiently Operate Apache Flink”的演讲很受欢迎。Robert的其中一个主题演讲涉及到了如何估算Flink集群规模。Flink Forward大会的观众们认为这个计算方法对他们很有用，因此我们把他的演讲主题转变成这篇博客。">
+<meta property="og:locale" content="cn">
+<meta property="og:image" content="http://yoursite.com/2019/11/08/%E5%A6%82%E4%BD%95%E8%AE%A1%E7%AE%97Flink%E9%9B%86%E7%BE%A4%E8%A7%84%E6%A8%A1%EF%BC%9A%E4%BF%A1%E5%B0%81%E8%83%8C%E8%AE%A1%E7%AE%97%E6%B3%95/How-to6-1.png">
+<meta property="og:image" content="http://yoursite.com/2019/11/08/%E5%A6%82%E4%BD%95%E8%AE%A1%E7%AE%97Flink%E9%9B%86%E7%BE%A4%E8%A7%84%E6%A8%A1%EF%BC%9A%E4%BF%A1%E5%B0%81%E8%83%8C%E8%AE%A1%E7%AE%97%E6%B3%95/How-to0-1.png">
+<meta property="og:image" content="http://yoursite.com/2019/11/08/%E5%A6%82%E4%BD%95%E8%AE%A1%E7%AE%97Flink%E9%9B%86%E7%BE%A4%E8%A7%84%E6%A8%A1%EF%BC%9A%E4%BF%A1%E5%B0%81%E8%83%8C%E8%AE%A1%E7%AE%97%E6%B3%95/How-to9-1.jpg">
+<meta property="og:image" content="http://yoursite.com/2019/11/08/%E5%A6%82%E4%BD%95%E8%AE%A1%E7%AE%97Flink%E9%9B%86%E7%BE%A4%E8%A7%84%E6%A8%A1%EF%BC%9A%E4%BF%A1%E5%B0%81%E8%83%8C%E8%AE%A1%E7%AE%97%E6%B3%95/How-to10-1.png">
+<meta property="og:image" content="http://yoursite.com/2019/11/08/%E5%A6%82%E4%BD%95%E8%AE%A1%E7%AE%97Flink%E9%9B%86%E7%BE%A4%E8%A7%84%E6%A8%A1%EF%BC%9A%E4%BF%A1%E5%B0%81%E8%83%8C%E8%AE%A1%E7%AE%97%E6%B3%95/How-to8-1.png">
+<meta property="og:image" content="http://yoursite.com/2019/11/08/%E5%A6%82%E4%BD%95%E8%AE%A1%E7%AE%97Flink%E9%9B%86%E7%BE%A4%E8%A7%84%E6%A8%A1%EF%BC%9A%E4%BF%A1%E5%B0%81%E8%83%8C%E8%AE%A1%E7%AE%97%E6%B3%95/How-to5-1.png">
+<meta property="og:image" content="http://yoursite.com/2019/11/08/%E5%A6%82%E4%BD%95%E8%AE%A1%E7%AE%97Flink%E9%9B%86%E7%BE%A4%E8%A7%84%E6%A8%A1%EF%BC%9A%E4%BF%A1%E5%B0%81%E8%83%8C%E8%AE%A1%E7%AE%97%E6%B3%95/How-to2-1.png">
+<meta property="og:image" content="http://yoursite.com/2019/11/08/%E5%A6%82%E4%BD%95%E8%AE%A1%E7%AE%97Flink%E9%9B%86%E7%BE%A4%E8%A7%84%E6%A8%A1%EF%BC%9A%E4%BF%A1%E5%B0%81%E8%83%8C%E8%AE%A1%E7%AE%97%E6%B3%95/How-to7-1.png">
+<meta property="og:image" content="http://yoursite.com/2019/11/08/%E5%A6%82%E4%BD%95%E8%AE%A1%E7%AE%97Flink%E9%9B%86%E7%BE%A4%E8%A7%84%E6%A8%A1%EF%BC%9A%E4%BF%A1%E5%B0%81%E8%83%8C%E8%AE%A1%E7%AE%97%E6%B3%95/How-to3-1.png">
+<meta property="og:image" content="http://yoursite.com/2019/11/08/%E5%A6%82%E4%BD%95%E8%AE%A1%E7%AE%97Flink%E9%9B%86%E7%BE%A4%E8%A7%84%E6%A8%A1%EF%BC%9A%E4%BF%A1%E5%B0%81%E8%83%8C%E8%AE%A1%E7%AE%97%E6%B3%95/How-to2-1.png">
+<meta property="og:image" content="http://yoursite.com/2019/11/08/%E5%A6%82%E4%BD%95%E8%AE%A1%E7%AE%97Flink%E9%9B%86%E7%BE%A4%E8%A7%84%E6%A8%A1%EF%BC%9A%E4%BF%A1%E5%B0%81%E8%83%8C%E8%AE%A1%E7%AE%97%E6%B3%95/How-to4-1.png">
+<meta property="article:published_time" content="2019-11-08T01:31:32.000Z">
+<meta property="article:modified_time" content="2020-02-26T10:15:00.014Z">
+<meta property="article:author" content="MrHup">
+<meta property="article:tag" content="Flink">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://yoursite.com/2019/11/08/%E5%A6%82%E4%BD%95%E8%AE%A1%E7%AE%97Flink%E9%9B%86%E7%BE%A4%E8%A7%84%E6%A8%A1%EF%BC%9A%E4%BF%A1%E5%B0%81%E8%83%8C%E8%AE%A1%E7%AE%97%E6%B3%95/How-to6-1.png">
+  
+    <link rel="alternate" href="/atom.xml" title="MrHup.code" type="application/atom+xml">
+  
+  
+    <link rel="icon" href="/favicon.png">
+  
+  
+    <link href="//fonts.googleapis.com/css?family=Source+Code+Pro" rel="stylesheet" type="text/css">
+  
+  
+<link rel="stylesheet" href="/css/style.css">
+
+<meta name="generator" content="Hexo 4.2.0"></head>
+
+<body>
+  <div id="container">
+    <div id="wrap">
+      <header id="header">
+  <div id="banner"></div>
+  <div id="header-outer" class="outer">
+    <div id="header-title" class="inner">
+      <h1 id="logo-wrap">
+        <a href="/" id="logo">MrHup.code</a>
+      </h1>
+      
+        <h2 id="subtitle-wrap">
+          <a href="/" id="subtitle">HeapAndStack</a>
+        </h2>
+      
+    </div>
+    <div id="header-inner" class="inner">
+      <nav id="main-nav">
+        <a id="main-nav-toggle" class="nav-icon"></a>
+        
+          <a class="main-nav-link" href="/">Home</a>
+        
+          <a class="main-nav-link" href="/archives">Archives</a>
+        
+      </nav>
+      <nav id="sub-nav">
+        
+          <a id="nav-rss-link" class="nav-icon" href="/atom.xml" title="RSS Feed"></a>
+        
+        <a id="nav-search-btn" class="nav-icon" title="Search"></a>
+      </nav>
+      <div id="search-form-wrap">
+        <form action="//google.com/search" method="get" accept-charset="UTF-8" class="search-form"><input type="search" name="q" class="search-form-input" placeholder="Search"><button type="submit" class="search-form-submit">&#xF002;</button><input type="hidden" name="sitesearch" value="http://yoursite.com"></form>
+      </div>
+    </div>
+  </div>
+</header>
+      <div class="outer">
+        <section id="main"><article id="post-如何计算Flink集群规模：信封背计算法" class="article article-type-post" itemscope itemprop="blogPost">
+  <div class="article-meta">
+    <a href="/2019/11/08/%E5%A6%82%E4%BD%95%E8%AE%A1%E7%AE%97Flink%E9%9B%86%E7%BE%A4%E8%A7%84%E6%A8%A1%EF%BC%9A%E4%BF%A1%E5%B0%81%E8%83%8C%E8%AE%A1%E7%AE%97%E6%B3%95/" class="article-date">
+  <time datetime="2019-11-08T01:31:32.000Z" itemprop="datePublished">2019-11-08</time>
+</a>
+    
+  </div>
+  <div class="article-inner">
+    
+    
+      <header class="article-header">
+        
+  
+    <h1 class="article-title" itemprop="name">
+      如何计算Flink集群规模：信封背计算法
+    </h1>
+  
+
+      </header>
+    
+    <div class="article-entry" itemprop="articleBody">
+      
+        <p>2017年柏林Flink Forward大会上Robert Metger的”Keep It Going: How to Reiably and Efficiently Operate Apache Flink”的演讲很受欢迎。Robert的其中一个主题演讲涉及到了如何估算Flink集群规模。Flink Forward大会的观众们认为这个计算方法对他们很有用，因此我们把他的演讲主题转变成这篇博客。</p>
+<p>Flink社区上经常被问起的一个问题是当从开发转到线上时，如何估算集群规模大小。当然，最准确的的答案是根据需要，但是这并没有什么用。这篇博客提出了一系列问题使你能够计算出一些基准。</p>
+<h2 id="1-通过数学建立基准"><a href="#1-通过数学建立基准" class="headerlink" title="1 通过数学建立基准"></a>1 通过数学建立基准</h2><p>首先，思考一下你的应用操作需要的资源基准的指标。</p>
+<p>关键指标如下：</p>
+<ul>
+<li>每秒的数据量和每条数据的大小</li>
+<li>去重key的数量和每个key的state大小</li>
+<li>state更新的数量和state backend的方式</li>
+</ul>
+<p>最后，考虑一下你的服务等级协议(SLAS)，比如宕机时间、延迟和最大的吞吐量。这些指标将直接影响你的容量计算。</p>
+<p>接下来，看一下基于预算可用的资源大小。比如：</p>
+<ul>
+<li>网络容量，需要考虑外部服务的网络消耗，比如Kakfa、HDFS等。</li>
+<li>磁盘带宽，比如你使用磁盘的state backend，比如RocksDB。同时需要考虑外部服务的磁盘使用，比如Kafka、HDFS等。</li>
+<li>机器的数量和它们的CPU和内存。</li>
+</ul>
+<p>基于上述这些因素，你现在能够估算正常流程的的资源基准。另外，还需要增加一些资源用作异常的恢复和checkpointing。</p>
+<h2 id="2-样例：计算"><a href="#2-样例：计算" class="headerlink" title="2 样例：计算"></a>2 样例：计算</h2><p>我现在通过一个集群上的虚拟job部署来描述整个资源基准的建立过程。信封背计算法的所用到的数字是不精准的，同时并没有考虑的很全面。在后面，我会指出在做计算时的忽视的一些点。</p>
+<h3 id="2-1-Flink流式应用样例和硬件"><a href="#2-1-Flink流式应用样例和硬件" class="headerlink" title="2.1 Flink流式应用样例和硬件"></a>2.1 Flink流式应用样例和硬件</h3><p><img src="How-to6-1.png" alt="Example Flink Streaming job topology"></p>
+<p>在这个案列中，我将部署典型的Flink流式应用，Kafka Topic的数据作为数据源。这个流接着使用keyed， aggregating window操作转换。窗口操作执行5分钟的窗口聚合。同时假设有源源不断的数据进来，window被设置成1分钟滑动一次。</p>
+<p>这表示每分钟执行一次过去5分钟内的窗口聚合。这个流式应用根据userId字段进行聚合。Kafka Topic中消息的大小平均是2KB。</p>
+<p>吞吐量是每秒100万条消息。为了理解窗口操作的state大小，你需要知道distinct Keys的数量，就是userIds的数量，这边大约是5000万个不同的用户ID。对于每个用户，你需要计算4个数字，通过longs(8 byte)存储。</p>
+<p>现在，让我们总结一下这个任务的关键指标：</p>
+<ul>
+<li>消息大小：2KB</li>
+<li>吞吐量：1000000 msg/sec</li>
+<li>Distinct Keys: 500000000(窗口聚合：每个key4个long大小)</li>
+<li>Checkpointing: 每分钟一次</li>
+</ul>
+<p>— 硬件：</p>
+<ul>
+<li>5台机器</li>
+<li>10 gigabit 以太网</li>
+<li>每台机器运行一个Flink TaskManager</li>
+<li>磁盘通过网络挂载</li>
+</ul>
+<p>— Kafka 独立部署</p>
+<p><img src="How-to0-1.png" alt="假设硬件步骤"></p>
+<p>总共有5台机器运行这个job，每台机器上运行一个TaskManager。磁盘通过网络挂载，同时有10 gigabit的以太网接入。同时Kafka是独立部署在其他机器上。</p>
+<p>每台机器有16CPU核。为了简化的需要，这边不考虑CPU和内存的使用情况。在实际情况下，你需要根据应用逻辑和state backend的使用，来考虑内存的使用。这个例子使用RocksDB state backend。（它是健壮的，同时对内存需求比较低）。</p>
+<h3 id="2-2-单机计算"><a href="#2-2-单机计算" class="headerlink" title="2.2 单机计算"></a>2.2 单机计算</h3><p>为了理解整个job运行部署的资源需求，最容易的方式是关注单台机器和TaskManager的操作。你可以通过单台机器计算出来的数字来推断整个集群的资源需求。</p>
+<p>默认(所有的操作都有并行度和没有特殊的调度限制)所有的操作在每台机器上都有运行。</p>
+<p>在这个例子中，Kafka source， 窗口操作和Kafka sink都运行在每台机器上。</p>
+<p><img src="How-to9-1.jpg" alt="A machine perspective - TaskManager n"></p>
+<p>keyBy是一个分离的操作，因此资源需求计算比较容易。在现实中，keyBy是一个API，连接了Kafak Source和窗口操作。</p>
+<p>我现在将从头到底理解这些操作的网络资源需求。</p>
+<h3 id="2-3-Kafka-source"><a href="#2-3-Kafka-source" class="headerlink" title="2.3 Kafka source"></a>2.3 Kafka source</h3><p>为了计算Kafka source收到的数据量，首先需要计算Kafka的聚合输入。sources每秒收到100万消息，每条消息2KB大小。<br>$$<br>2KB \times 1000000/s = 2GB/s<br>$$<br>2GB/s除以5台机器，得到如下结果：<br>$$<br>2GB/s \div 5 machines = 400MB/s<br>$$<br>集群中每台机器上TaskManager的source收到400MB/s的数据。</p>
+<p><img src="How-to10-1.png" alt="Kafka source calculation"></p>
+<h3 id="2-4-Shuffle-keyBY"><a href="#2-4-Shuffle-keyBY" class="headerlink" title="2.4 Shuffle / keyBY"></a>2.4 Shuffle / keyBY</h3><p>接下来，你需要确保同一个key的所有事件落在一些机器上。这边，你从kafka中读取的数据可能被重新分区。<br>shuffle过程发送所有拥有相同key的数据到同一台机器，因此这边把400MB/s的数据分割成一个根据userId分区的流。<br>$$<br>400MB/s \div 5 machines = 80MB/s<br>$$<br>平均来看，你将发送80MB/s的数据到每一台机器。这个分析是从单台机器的角度，但是一些数据已经在目标机器上了，因此要减去80MB/s。<br>$$<br>400MB/s - 80MB/s = 320MB/s<br>$$<br><img src="How-to8-1.png" alt="shuffle calculation"></p>
+<h3 id="2-5-Window-Emit-and-Kafka-Sink"><a href="#2-5-Window-Emit-and-Kafka-Sink" class="headerlink" title="2.5 Window Emit and Kafka Sink"></a>2.5 Window Emit and Kafka Sink</h3><p>接下去的问题是窗口操作发送多少数据到Kafka Sink。结果是67MB/s，让我们看一下如何计算。<br>窗口操作为每个key保持了4个数字(longs)聚合。每一分钟，操作将发送当前的聚合值。每个key发送2ints(user_id, window_ts)和4 longs。<br>$$<br>(2 \times4bytes) + (4\times8bytes) = 40 bytes , per, key<br>$$<br>然后乘以keys数量(500000000除以机器数量)<br>$$<br>500000000 \div5machines \times40bytes = 40GB<br>$$<br>然后计算每秒的大小：<br>$$<br>40GB/min \div60=67MB/s<br>$$<br>这表示每个TaskManager从窗口操作中平均发送67MB/s的用户数据。因为Kafka sink运行在每个TaskManager上，所以没有进一步的分区操作。这就是从Flink到Kafka的发送的数据量。</p>
+<p><img src="How-to5-1.png" alt="User data: From Kafka, shuffled to the window operators and back to Kafka"></p>
+<p>从窗口操作中得到的数据每分钟会发送一次。在实际中，这个操作不会发以67MB/s的发送数据，而是在一分钟之内的几秒间到达最大带宽。</p>
+<p>现在，总结一下：</p>
+<ul>
+<li>进来的数据：720MB/s(400+320)per machine</li>
+<li>出去的数据：387MB/s(320+67)per machine</li>
+</ul>
+<p><img src="How-to2-1.png" alt=""></p>
+<h3 id="2-6-State和Checkpointing"><a href="#2-6-State和Checkpointing" class="headerlink" title="2.6 State和Checkpointing"></a>2.6 State和Checkpointing</h3><p>到目前为止，我们仅仅计算了Flink处理的用户数据。你同时还需要考虑磁盘的使用，比如存储state 和checkpointing。为了计算磁盘的花销，你需要查看窗口计算如何进入state。Kafka Source也需要保持一些state，但是跟窗口操作的state相比，可以忽略不计。</p>
+<p>为了理解窗口操作的state大小，让我们换一个角度看这个问题。Flink计算5分钟的时间窗口，并且1分钟滑动一次。Flink是通过保持5个窗口来实现滑动窗口。根据先前提到的，在使用窗口时，你需要为每个窗口保持40bytes的状态，并且窗口是提前聚合的。对于每一条到来的事件，你首先需要取出当前聚合值，再更新聚合值，然后把新值写回去。</p>
+<p><img src="How-to7-1.png" alt="Window State"></p>
+<p>这意味着：<br>$$<br>40 , bytes ,of ,state \times 200000 msg/s , per , machine = 40MB/s<br>$$</p>
+<p>有40MB/s的磁盘读写（每台机器上）。根据先前说的，磁盘是通过网络挂载的。因此需要在先前的基础上增加这个值。</p>
+<p>现在总共需要的资源如下：</p>
+<ul>
+<li>进入的数据：760MB/s(400MB/s data in + 320MB/s  shuffle + 40MB/s state)</li>
+<li>出去的数据：427MB/s(320MB/s shuffle + 67MB/s data out + 40MB/s state)<br><img src="How-to3-1.png" alt=""></li>
+</ul>
+<p>上述的计算考虑了state的进入，当事件到达窗口操作时触发。你还需要checkpoint和容错机制。如果一台机器或者其他任何东西挂掉，你想要恢复你的窗口并继续处理。</p>
+<p>Checkpointing是每隔1分钟执行一次，并且每个checkpoint复制整个job的状态到通过网络挂载的文件系统。</p>
+<p>让我们快速的看一下每台机器的state大小：<br>$$<br>40 , bytes , of , state \times 5 , windows \times100000000 , keys = 20GB<br>$$<br>接着算每秒的值：<br>$$<br>20GB \div 60 =333MB/s<br>$$<br>和窗口操作类似，checkpointing也是每分钟执行一次。它尝试全速发送数据到外部存储。Checkpointing引起了额外的state进入。自从Flink1.3后，RocksDB支持增量checkpointing来降低每次checkpoint时所需的网络传输。</p>
+<p>计算更新如下：</p>
+<ul>
+<li>进入的数据：760MB/s(400 + 320 + 40)</li>
+<li>出去的数据：760MB/s(320 + 67 + 40 + 333)</li>
+</ul>
+<p><img src="How-to2-1.png" alt="Window State"></p>
+<p>这意味着整个集群网络流量是：<br>$$<br>(760 + 760)\times5 + 400 + 2335=10335MB/s<br>$$<br>400是80MB的state读写乘以5台机器。2335是Kafka进和出的总值。</p>
+<p>整个硬件的网络可用容量如下：</p>
+<p><img src="How-to4-1.png" alt="Networking requirements"></p>
+<p>这边我要加一个免责声明。上述这些计算没有包含协议的花销，比如TCP、Ethernet和RPC（在Flink、Kafka和HDFS等中）。但是上述的计算仍旧对如何计算一个job的资源有指导意义。</p>
+<h2 id="Scale-Your-Way"><a href="#Scale-Your-Way" class="headerlink" title="Scale Your Way"></a>Scale Your Way</h2><p>基于我的分析，这个例子中，5个节点的集群，在典型的操作中，每个机器需要处理760MB/s的数据进出，同时每台机器可以处理的容量是1250MB/s。这样保留了40%的网络容量来应对我刚才提到的复杂度，比如网络协议花销，事件重放，数据倾斜引起的不平均的负载等。</p>
+<p>当然，没有一个标准答案来说明留40%的余量是否合适。但是这个算法可以给你一个好的开始。尝试上述的计算，修改上述的参数为你自己的参数。Happy scaling！</p>
+<h2 id="翻译源"><a href="#翻译源" class="headerlink" title="翻译源"></a>翻译源</h2><p><a href="https://www.ververica.com/blog/how-to-size-your-apache-flink-cluster-general-guidelines" target="_blank" rel="noopener">How To Size Your Apache Flink® Cluster: A Back-of-the-Envelope Calculation</a></p>
+
+      
+    </div>
+    <footer class="article-footer">
+      <a data-url="http://yoursite.com/2019/11/08/%E5%A6%82%E4%BD%95%E8%AE%A1%E7%AE%97Flink%E9%9B%86%E7%BE%A4%E8%A7%84%E6%A8%A1%EF%BC%9A%E4%BF%A1%E5%B0%81%E8%83%8C%E8%AE%A1%E7%AE%97%E6%B3%95/" data-id="ck736a2r2002gees6089xdmrs" class="article-share-link">Share</a>
+      
+      
+  <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/Flink/" rel="tag">Flink</a></li></ul>
+
+    </footer>
+  </div>
+  
+    
+<nav id="article-nav">
+  
+    <a href="/2020/02/20/%E6%B7%B1%E5%85%A5%E7%90%86%E8%A7%A3Flink%E7%BD%91%E7%BB%9C%E6%A0%88%E5%8F%8A%E8%83%8C%E5%8E%8B%E7%9B%91%E6%8E%A7/" id="article-nav-newer" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Newer</strong>
+      <div class="article-nav-title">
+        
+          深入理解Flink网络栈及背压监控
+        
+      </div>
+    </a>
+  
+  
+    <a href="/2018/12/22/%E5%A6%82%E4%BD%95%E6%90%AD%E5%BB%BA%E9%AB%98%E5%8F%AF%E7%94%A8Hadoop%E9%9B%86%E7%BE%A4/" id="article-nav-older" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Older</strong>
+      <div class="article-nav-title">如何搭建高可用Hadoop集群</div>
+    </a>
+  
+</nav>
+
+  
+</article>
+
+</section>
+        
+          <aside id="sidebar">
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Categories</h3>
+    <div class="widget">
+      <ul class="category-list"><li class="category-list-item"><a class="category-list-link" href="/categories/iOS/">iOS</a></li><li class="category-list-item"><a class="category-list-link" href="/categories/%E5%A4%A7%E6%95%B0%E6%8D%AE/">大数据</a></li><li class="category-list-item"><a class="category-list-link" href="/categories/%E5%AE%89%E5%85%A8/">安全</a></li><li class="category-list-item"><a class="category-list-link" href="/categories/%E5%BE%AE%E6%9C%8D%E5%8A%A1/">微服务</a></li><li class="category-list-item"><a class="category-list-link" href="/categories/%E6%9C%BA%E5%99%A8%E5%AD%A6%E4%B9%A0/">机器学习</a></li><li class="category-list-item"><a class="category-list-link" href="/categories/%E7%88%AC%E8%99%AB/">爬虫</a></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tags</h3>
+    <div class="widget">
+      <ul class="tag-list" itemprop="keywords"><li class="tag-list-item"><a class="tag-list-link" href="/tags/Actuator/" rel="tag">Actuator</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Flink/" rel="tag">Flink</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Flume/" rel="tag">Flume</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Grafana/" rel="tag">Grafana</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Hadoop/" rel="tag">Hadoop</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/KVO/" rel="tag">KVO</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Kafka/" rel="tag">Kafka</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Objective-C/" rel="tag">Objective-C</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Prometheus/" rel="tag">Prometheus</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Spark/" rel="tag">Spark</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Spring-Boot/" rel="tag">Spring Boot</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/Swift/" rel="tag">Swift</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/akka/" rel="tag">akka</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/block/" rel="tag">block</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/flink/" rel="tag">flink</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/kafka/" rel="tag">kafka</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/runloop/" rel="tag">runloop</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/runtime/" rel="tag">runtime</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/scrapy/" rel="tag">scrapy</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E5%87%BD%E6%95%B0%E6%B4%BE%E5%8F%91/" rel="tag">函数派发</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E5%93%8D%E5%BA%94%E8%BF%9E/" rel="tag">响应连</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E5%AE%89%E5%85%A8/" rel="tag">安全</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E5%AF%86%E9%92%A5/" rel="tag">密钥</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E6%9C%BA%E5%99%A8%E5%AD%A6%E4%B9%A0/" rel="tag">机器学习</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/" rel="tag">源码分析</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E7%88%AC%E8%99%AB/" rel="tag">爬虫</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E9%94%81/" rel="tag">锁</a></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tag Cloud</h3>
+    <div class="widget tagcloud">
+      <a href="/tags/Actuator/" style="font-size: 12.5px;">Actuator</a> <a href="/tags/Flink/" style="font-size: 12.5px;">Flink</a> <a href="/tags/Flume/" style="font-size: 10px;">Flume</a> <a href="/tags/Grafana/" style="font-size: 10px;">Grafana</a> <a href="/tags/Hadoop/" style="font-size: 12.5px;">Hadoop</a> <a href="/tags/KVO/" style="font-size: 10px;">KVO</a> <a href="/tags/Kafka/" style="font-size: 10px;">Kafka</a> <a href="/tags/Objective-C/" style="font-size: 20px;">Objective-C</a> <a href="/tags/Prometheus/" style="font-size: 10px;">Prometheus</a> <a href="/tags/Spark/" style="font-size: 10px;">Spark</a> <a href="/tags/Spring-Boot/" style="font-size: 12.5px;">Spring Boot</a> <a href="/tags/Swift/" style="font-size: 12.5px;">Swift</a> <a href="/tags/akka/" style="font-size: 10px;">akka</a> <a href="/tags/block/" style="font-size: 10px;">block</a> <a href="/tags/flink/" style="font-size: 15px;">flink</a> <a href="/tags/kafka/" style="font-size: 12.5px;">kafka</a> <a href="/tags/runloop/" style="font-size: 10px;">runloop</a> <a href="/tags/runtime/" style="font-size: 10px;">runtime</a> <a href="/tags/scrapy/" style="font-size: 10px;">scrapy</a> <a href="/tags/%E5%87%BD%E6%95%B0%E6%B4%BE%E5%8F%91/" style="font-size: 10px;">函数派发</a> <a href="/tags/%E5%93%8D%E5%BA%94%E8%BF%9E/" style="font-size: 10px;">响应连</a> <a href="/tags/%E5%AE%89%E5%85%A8/" style="font-size: 10px;">安全</a> <a href="/tags/%E5%AF%86%E9%92%A5/" style="font-size: 10px;">密钥</a> <a href="/tags/%E6%9C%BA%E5%99%A8%E5%AD%A6%E4%B9%A0/" style="font-size: 12.5px;">机器学习</a> <a href="/tags/%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90/" style="font-size: 17.5px;">源码分析</a> <a href="/tags/%E7%88%AC%E8%99%AB/" style="font-size: 10px;">爬虫</a> <a href="/tags/%E9%94%81/" style="font-size: 10px;">锁</a>
+    </div>
+  </div>
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Archives</h3>
+    <div class="widget">
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2020/02/">February 2020</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2019/11/">November 2019</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2018/12/">December 2018</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2018/11/">November 2018</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2018/08/">August 2018</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2018/06/">June 2018</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2018/04/">April 2018</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2018/03/">March 2018</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2018/01/">January 2018</a></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Recent Posts</h3>
+    <div class="widget">
+      <ul>
+        
+          <li>
+            <a href="/2020/02/20/%E6%B7%B1%E5%85%A5%E7%90%86%E8%A7%A3Flink%E7%BD%91%E7%BB%9C%E6%A0%88%E5%8F%8A%E8%83%8C%E5%8E%8B%E7%9B%91%E6%8E%A7/">深入理解Flink网络栈及背压监控</a>
+          </li>
+        
+          <li>
+            <a href="/2019/11/08/%E5%A6%82%E4%BD%95%E8%AE%A1%E7%AE%97Flink%E9%9B%86%E7%BE%A4%E8%A7%84%E6%A8%A1%EF%BC%9A%E4%BF%A1%E5%B0%81%E8%83%8C%E8%AE%A1%E7%AE%97%E6%B3%95/">如何计算Flink集群规模：信封背计算法</a>
+          </li>
+        
+          <li>
+            <a href="/2018/12/22/%E5%A6%82%E4%BD%95%E6%90%AD%E5%BB%BA%E9%AB%98%E5%8F%AF%E7%94%A8Hadoop%E9%9B%86%E7%BE%A4/">如何搭建高可用Hadoop集群</a>
+          </li>
+        
+          <li>
+            <a href="/2018/11/13/Akka%E5%9C%A8Flink%E4%B8%AD%E7%9A%84%E5%BA%94%E7%94%A8/">Akka在Flink中的应用</a>
+          </li>
+        
+          <li>
+            <a href="/2018/08/19/Spring-Boot-Metrics%E7%9B%91%E6%8E%A7%E4%B9%8BPrometheus-Grafana/">Spring Boot Metrics监控之Prometheus&amp;Grafana</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+
+  
+</aside>
+        
+      </div>
+      <footer id="footer">
+  
+  <div class="outer">
+    <div id="footer-info" class="inner">
+      &copy; 2020 MrHup<br>
+      Powered by <a href="http://hexo.io/" target="_blank">Hexo</a>
+    </div>
+  </div>
+</footer>
+    </div>
+    <nav id="mobile-nav">
+  
+    <a href="/" class="mobile-nav-link">Home</a>
+  
+    <a href="/archives" class="mobile-nav-link">Archives</a>
+  
+</nav>
+    
+
+<script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
+
+
+  
+<link rel="stylesheet" href="/fancybox/jquery.fancybox.css">
+
+  
+<script src="/fancybox/jquery.fancybox.pack.js"></script>
+
+
+
+
+<script src="/js/script.js"></script>
+
+
+
+
+  </div>
+</body>
+</html>
